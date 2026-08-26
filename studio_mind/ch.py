@@ -113,7 +113,7 @@ def run_query(client, registry: EvidenceRegistry, purpose: str, sql: str,
     from . import tracing
 
     span_ctx = tracing.maybe_tool_span(
-        f"mcp-clickhouse · {getattr(client, '_tool', 'select_query')}", safe_sql)
+        f"mcp-clickhouse · {getattr(client, '_tool', 'run_query')}", safe_sql)
     with span_ctx as span:
         try:
             res = client.query(safe_sql)

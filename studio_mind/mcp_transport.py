@@ -12,13 +12,20 @@ Design:
     daemon thread — the subprocess stays warm across queries, so the
     millisecond timings in the trust panel reflect query cost, not process
     spawn cost);
-  * tool surface is discovered at startup: newer official servers expose
-    ``list_tables`` / ``select_query``; this pinned release exposes
-    ``execute_query`` — both are spoken;
-  * results are normalized to the same ``.result_rows`` / ``.column_names``
-    shape clickhouse-connect produces, so the pipeline is transport-agnostic;
-  * the connection is opened with CLICKHOUSE_READONLY=1 — read-only is
-    enforced server-side too, not just by our sqlguard.
+  * the official server (PyPI ``mcp-clickhouse``, github.com/ClickHouse/
+    mcp-clickhouse) is spawned as a stdio subprocess with ``python -m
+    mcp_clickhouse.main``; its tool surface is discovered at startup —
+    ``run_query`` for queries, ``list_tables`` for schema;
+  * the official server speaks the HTTP interface (clickhouse-connect), so
+    CLICKHOUSE_URL's port (8123/8443) is passed through as-is — no native
+    remap; CLICKHOUSE_SECURE is derived from the URL scheme;
+  * results arrive as one TextContent JSON envelope
+    ``{"columns": [...], "rows": [[...], ...]}`` and normalize to the same
+    ``.result_rows`` / ``.column_names`` shape clickhouse-connect produces,
+    so the pipeline is transport-agnostic;
+  * read-only is enforced BY THE SERVER: CLICKHOUSE_ALLOW_WRITE_ACCESS stays
+    unset/false (the official default), so writes are refused server-side
+    before our sqlguard ever sees them.
 
 Trust-panel statistics (rows scanned, server-side latency) come from
 ``system.query_log`` — queried through the same MCP session, so the numbers
@@ -40,7 +47,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-MCP_SERVER_MODULE = "clickhouse_mcp_server.server"  # official server, stdio entry
+MCP_SERVER_MODULE = "mcp_clickhouse.main"  # official ClickHouse MCP server (stdio)
 
 
 class McpTransportError(RuntimeError):
@@ -59,25 +66,20 @@ class QueryResult:
         return [dict(zip(self.column_names, row)) for row in self.result_rows]
 
 
-_HTTP_TO_NATIVE = {8123: 9000, 8443: 9440}
+def _normalize_url(url: str) -> tuple[str, int, bool]:
+    """Split CLICKHOUSE_URL for the official server's HTTP-interface env.
 
-
-def _normalize_url_to_native(url: str, secure_port: int = 9440, plain_port: int = 9000) -> tuple[str, int, bool]:
-    """The official server speaks native TCP (clickhouse-driver), not HTTP.
-
-    CLICKHOUSE_URL carries the HTTP port (8123/8443); remap to the native
-    ports (9000/9440). Non-standard ports are passed through unchanged so
-    custom deployments keep working.
+    The official mcp-clickhouse server talks to ClickHouse over HTTP via
+    clickhouse-connect, so the HTTP port in CLICKHOUSE_URL (8123 plain /
+    8443 secure) is passed through unchanged; the scheme decides
+    CLICKHOUSE_SECURE. Non-standard ports pass through as-is.
     """
     m = re.match(r"(?:https?://)?([^:/]+)(?::(\d+))?", url or "")
     if not m:
         raise McpTransportError(f"cannot parse CLICKHOUSE_URL {url!r}")
     host = m.group(1)
     secure = url.startswith("https://")
-    if m.group(2):
-        port = _HTTP_TO_NATIVE.get(int(m.group(2)), int(m.group(2)))
-    else:
-        port = secure_port if secure else plain_port
+    port = int(m.group(2)) if m.group(2) else (8443 if secure else 8123)
     return host, port, secure
 
 
@@ -114,14 +116,15 @@ class McpClient:
 
     # ``server_command`` lets tests point the client at a fake MCP server.
     def __init__(self, host: str, port: int, user: str, password: str,
-                 database: str = "studio", readonly: bool = True,
-                 server_command: list[str] | None = None):
+                 database: str = "studio", secure: bool = False,
+                 readonly: bool = True, server_command: list[str] | None = None):
         self.host, self.port, self.user = host, port, user
-        self.password, self.database, self.readonly = password, database, readonly
+        self.password, self.database = password, database
+        self.secure, self.readonly = secure, readonly
         self._server_command = server_command
         self._loop = _LoopThread()
         self._session = None
-        self._tool: str | None = None       # discovered: select_query | execute_query
+        self._tool: str | None = None       # discovered: run_query (official)
         self._list_tool: str | None = None  # list_tables | None
         self._started_at = time.time()
         self._ready = threading.Event()
@@ -134,12 +137,12 @@ class McpClient:
     @classmethod
     def from_settings(cls, settings, server_command: list[str] | None = None) -> "McpClient":
         ch = settings.ch
-        host, port, _secure = _normalize_url_to_native(ch.url)
+        host, port, secure = _normalize_url(ch.url)
         override = server_command or os.getenv("STUDIO_MIND_MCP_COMMAND")
         if override:
             override = json.loads(override) if override.startswith("[") else override.split()
         return cls(host=host, port=port, user=ch.user, password=ch.password,
-                   database=ch.database, server_command=override)
+                   database=ch.database, secure=secure, server_command=override)
 
     # -- MCP plumbing -----------------------------------------------------------
 
@@ -171,18 +174,23 @@ class McpClient:
         from mcp.client.stdio import stdio_client
 
         command = self._server_command or [sys.executable, "-m", MCP_SERVER_MODULE]
+        env = {
+            **os.environ,
+            "CLICKHOUSE_HOST": self.host,
+            "CLICKHOUSE_PORT": str(self.port),
+            "CLICKHOUSE_SECURE": "true" if self.secure else "false",
+            "CLICKHOUSE_USER": self.user,
+            "CLICKHOUSE_PASSWORD": self.password,
+            "CLICKHOUSE_DATABASE": self.database,
+        }
+        if self.readonly:
+            # official server default; state it explicitly so the trust story
+            # is greppable: writes are refused inside the MCP server
+            env["CLICKHOUSE_ALLOW_WRITE_ACCESS"] = "false"
         params = StdioServerParameters(
             command=command[0],
             args=command[1:],
-            env={
-                **os.environ,
-                "CLICKHOUSE_HOST": self.host,
-                "CLICKHOUSE_PORT": str(self.port),
-                "CLICKHOUSE_USER": self.user,
-                "CLICKHOUSE_PASSWORD": self.password,
-                "CLICKHOUSE_DATABASE": self.database,
-                "CLICKHOUSE_READONLY": "1" if self.readonly else "0",
-            },
+            env=env,
         )
         stop = asyncio.Event()
         self._signal_stop = stop
@@ -192,9 +200,7 @@ class McpClient:
                     await session.initialize()
                     tools = (await session.list_tools()).tools
                     names = {t.name for t in tools}
-                    select_tool = ("select_query" if "select_query" in names
-                                   else "execute_query" if "execute_query" in names
-                                   else None)
+                    select_tool = "run_query" if "run_query" in names else None
                     if select_tool is None:
                         raise McpTransportError(
                             f"mcp-clickhouse exposes no query tool (found: {sorted(names)})")
@@ -223,10 +229,18 @@ class McpClient:
         return self._to_result(payload)
 
     def command(self, sql: str) -> Any:
-        """Run EXPLAIN / PRAGMA-style statements; returns text."""
+        """Run EXPLAIN / SHOW-style statements; returns text."""
         payload = self._extract(self._call(self._tool, {"query": sql}))
         if isinstance(payload, str):
             return payload
+        if isinstance(payload, dict):
+            cols, rows = payload.get("columns"), payload.get("rows") or []
+            if cols is not None:
+                if len(cols) == 1:                    # EXPLAIN/SHOW: one text col
+                    return "\n".join(str(r[0]) for r in rows if r)
+                return json.dumps(rows, default=str)
+            if "error" in payload:
+                raise McpTransportError(str(payload["error"]))
         if isinstance(payload, list) and payload and isinstance(payload[0], dict):
             first = payload[0]
             if len(first) == 1:
@@ -236,7 +250,10 @@ class McpClient:
 
     def list_tables(self) -> list[dict[str, Any]]:
         if self._list_tool:
-            return self._extract(self._call(self._list_tool, {}))
+            payload = self._extract(self._call(self._list_tool, {"database": self.database}))
+            if isinstance(payload, dict):
+                return list(payload.get("tables") or [])
+            return payload if isinstance(payload, list) else []
         rows = self.query(
             "SELECT name, total_rows FROM system.tables "
             f"WHERE database = '{self.database}' ORDER BY name"
@@ -289,8 +306,15 @@ class McpClient:
 
     @staticmethod
     def _to_result(payload: Any) -> QueryResult:
-        if isinstance(payload, dict) and "error" in payload:
-            raise McpTransportError(str(payload["error"]))
+        """Official envelope: {"columns": [...], "rows": [[...], ...]}."""
+        if isinstance(payload, dict):
+            if "error" in payload:
+                raise McpTransportError(str(payload["error"]))
+            if "columns" in payload and "rows" in payload:
+                cols = list(payload["columns"])
+                rows = [tuple(row) for row in payload["rows"]]
+                return QueryResult(column_names=cols, result_rows=rows)
+            raise McpTransportError(f"unexpected tool payload: {payload!r}"[:400])
         if isinstance(payload, str):
             raise McpTransportError(payload)
         if not isinstance(payload, list) or not payload:
