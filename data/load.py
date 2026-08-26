@@ -103,6 +103,8 @@ def load_events(client, out: dict, database: str = "studio") -> int:
             completed=np.concatenate(out["completed"])[lo:hi],
             ad_impressions=np.concatenate(out["ad_impressions"])[lo:hi],
             ad_seconds=np.concatenate(out["ad_seconds"])[lo:hi],
+            rebuffer_count=np.concatenate(out["rebuffer_count"])[lo:hi],
+            rebuffer_seconds=np.concatenate(out["rebuffer_seconds"])[lo:hi],
             device=np.array(DEVICES, dtype=object)[np.concatenate(out["device_idx"])[lo:hi]],
             region=np.array(REGIONS, dtype=object)[np.concatenate(out["region_idx"])[lo:hi]],
             plan=np.array(PLANS, dtype=object)[np.concatenate(out["plan_idx"])[lo:hi]],

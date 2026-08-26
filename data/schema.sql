@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS studio.viewing_events
     completed        Bool,                           -- completion_pct >= 0.9
     ad_impressions   UInt8,
     ad_seconds       UInt16,
+    rebuffer_count   UInt8,                          -- playback stalls this event
+    rebuffer_seconds UInt16,                         -- total stall seconds
     device           LowCardinality(String),
     region           LowCardinality(String),
     plan             LowCardinality(String),

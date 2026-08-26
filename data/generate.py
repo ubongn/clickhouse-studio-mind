@@ -8,6 +8,8 @@ Behavioral realism baked in (all discoverable by the agent, none hardcoded):
     by each title's ad density)
   * regional genre affinity (EMEA/crime, APAC/animation, LATAM/romance, ...)
   * device effects (TV completes more, mobile less)
+  * QoE telemetry: playback stalls per event (device-weighted Poisson), stalls
+    trim completion
   * evening/weekend viewing rhythm
   * churn: inactivity + disengagement (low completion) + plan/channel hazards
 
@@ -50,6 +52,7 @@ CHANNELS = ("paid_social", "search", "partnership", "organic", "referral")
 REGION_P = np.array([0.38, 0.27, 0.22, 0.13])
 PLAN_P = np.array([0.45, 0.35, 0.20])
 DEVICE_P = np.array([0.34, 0.36, 0.22, 0.08])
+DEVICE_REBUFFER = np.array([0.5, 1.6, 1.0, 0.8])   # rebuffer propensity, idx into DEVICES
 CHANNEL_P = np.array([0.30, 0.18, 0.14, 0.28, 0.10])
 DEVICE_COMPLETION = {"tv": 1.05, "tablet": 1.00, "desktop": 0.97, "mobile": 0.90}
 DEVICE_CONTINUE = {"tv": 1.045, "tablet": 1.0, "desktop": 0.99, "mobile": 0.955}
@@ -179,8 +182,8 @@ def generate_events(users: dict, catalog: dict, target_rows: int, seed: int, log
     out = {c: [] for c in (
         "event_time_ms", "user_id", "title_id", "episode_id", "season_no", "ep_number",
         "watched_seconds", "content_seconds", "completion_pct", "completed",
-        "ad_impressions", "ad_seconds", "device_idx", "region_idx", "plan_idx",
-        "is_binge", "session_pos",
+        "ad_impressions", "ad_seconds", "rebuffer_count", "rebuffer_seconds",
+        "device_idx", "region_idx", "plan_idx", "is_binge", "session_pos",
     )}
     total_rows = 0
     total_sessions = 0
@@ -299,6 +302,14 @@ def generate_events(users: dict, catalog: dict, target_rows: int, seed: int, log
             ad_den = title_ad[tid_arr]
             is_ads = plan == 0
             mean = mean * dev_f * np.where(is_ads, 1 - 0.12 * ad_den, 1.0)
+
+            # QoE: playback stalls (Poisson, device-weighted); each stall trims
+            # expected completion up to -5.5% (friction compounds).
+            rb_prop = DEVICE_REBUFFER[dev]
+            rebuf = rng.poisson(0.22 * rb_prop)
+            rebuf_s = rebuf * rng.integers(2, 9, size=rebuf.size)
+            mean = mean * (1.0 - 0.055 * np.minimum(rebuf, 4) / 4.0)
+
             mean = np.clip(mean, 0.10, 0.97)
             kappa = 13.0
             comp = rng.beta(mean * kappa, (1 - mean) * kappa)
@@ -331,6 +342,9 @@ def generate_events(users: dict, catalog: dict, target_rows: int, seed: int, log
             out["completed"].append((comp >= 0.9))
             out["ad_impressions"].append(ads.astype(np.uint8))
             out["ad_seconds"].append(ad_secs.astype(np.uint16))
+            out["rebuffer_count"].append(rebuf.astype(np.uint8))
+            out["rebuffer_seconds"].append(
+                np.minimum(rebuf_s, 65_535).astype(np.uint16))
             out["device_idx"].append(dev)
             out["region_idx"].append(sess_region[idx])
             out["plan_idx"].append(plan)
