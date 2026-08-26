@@ -9,9 +9,11 @@ Behavioral realism baked in (all discoverable by the agent, none hardcoded):
   * regional genre affinity (EMEA/crime, APAC/animation, LATAM/romance, ...)
   * device effects (TV completes more, mobile less)
   * QoE telemetry: playback stalls per event (device-weighted Poisson), stalls
-    trim completion
+    trim completion; plus a seeded CDN incident week (late May, NA,
+    mobile+desktop ~10x stalls) that completion and churn queries must find
   * evening/weekend viewing rhythm
   * churn: inactivity + disengagement (low completion) + plan/channel hazards
+    + QoE exits (heavy incident-week rebuffering)
 
 Everything is a pure function of --seed. Run:
 
@@ -53,6 +55,9 @@ REGION_P = np.array([0.38, 0.27, 0.22, 0.13])
 PLAN_P = np.array([0.45, 0.35, 0.20])
 DEVICE_P = np.array([0.34, 0.36, 0.22, 0.08])
 DEVICE_REBUFFER = np.array([0.5, 1.6, 1.0, 0.8])   # rebuffer propensity, idx into DEVICES
+# CDN incident: one bad week in late May, NA only, mobile+desktop hit hardest.
+# The anomaly morning-brief / QoE→churn queries must find it.
+INCIDENT_START, INCIDENT_END = 108, 115             # day offsets from WINDOW_START
 CHANNEL_P = np.array([0.30, 0.18, 0.14, 0.28, 0.10])
 DEVICE_COMPLETION = {"tv": 1.05, "tablet": 1.00, "desktop": 0.97, "mobile": 0.90}
 DEVICE_CONTINUE = {"tv": 1.045, "tablet": 1.0, "desktop": 0.99, "mobile": 0.955}
@@ -188,6 +193,7 @@ def generate_events(users: dict, catalog: dict, target_rows: int, seed: int, log
     total_rows = 0
     total_sessions = 0
     events_per_session = 1.72
+    day0_ms = int((np.datetime64(WINDOW_START) - EPOCH) / np.timedelta64(1, "ms"))
 
     for d in range(WINDOW_DAYS):
         remaining_days = WINDOW_DAYS - d
@@ -304,9 +310,15 @@ def generate_events(users: dict, catalog: dict, target_rows: int, seed: int, log
             mean = mean * dev_f * np.where(is_ads, 1 - 0.12 * ad_den, 1.0)
 
             # QoE: playback stalls (Poisson, device-weighted); each stall trims
-            # expected completion up to -5.5% (friction compounds).
+            # expected completion up to -5.5% (friction compounds). During the
+            # CDN incident week NA mobile+desktop rebuffer ~10x baseline.
+            day_off = (cur_ts[idx].astype("int64") - day0_ms) // 86_400_000
+            incident = (
+                (day_off >= INCIDENT_START) & (day_off <= INCIDENT_END)
+                & (sess_region[idx] == 0) & ((dev == 1) | (dev == 2))
+            )
             rb_prop = DEVICE_REBUFFER[dev]
-            rebuf = rng.poisson(0.22 * rb_prop)
+            rebuf = rng.poisson(0.22 * rb_prop + np.where(incident, 2.6 * rb_prop, 0.0))
             rebuf_s = rebuf * rng.integers(2, 9, size=rebuf.size)
             mean = mean * (1.0 - 0.055 * np.minimum(rebuf, 4) / 4.0)
 
@@ -381,6 +393,8 @@ def derive_churn(users: dict, out: dict, rng: np.random.Generator):
     uid = np.concatenate(out["user_id"]) if len(out["user_id"]) else np.array([], dtype=np.uint32)
     ts = np.concatenate(out["event_time_ms"]) if len(out["event_time_ms"]) else np.array([], dtype=np.int64)
     comp = np.concatenate(out["completion_pct"]) if len(out["completion_pct"]) else np.array([], dtype=np.float32)
+    rbs = (np.concatenate(out["rebuffer_seconds"])
+           if len(out["rebuffer_seconds"]) else np.array([], dtype=np.uint16))
 
     n = users["user_id"].size
     order = np.argsort(ts)
@@ -389,6 +403,7 @@ def derive_churn(users: dict, out: dict, rng: np.random.Generator):
     # per-user aggregation via reduceat on sorted-by-(user, time): first sort by user then ts
     order2 = np.lexsort((ts, uid))
     uid_s, ts_s, comp_s = uid[order2], ts[order2], comp[order2]
+    rbs_s = rbs[order2] if rbs.size else rbs       # aligned with uid_s/ts_s
 
     starts = np.searchsorted(uid_s, np.arange(1, n + 1), side="left")
     ends = np.searchsorted(uid_s, np.arange(1, n + 1), side="right")
@@ -402,6 +417,21 @@ def derive_churn(users: dict, out: dict, rng: np.random.Generator):
     csum = np.concatenate([[0.0], np.cumsum(comp_s, dtype=np.float64)])
     mean_comp[has_events] = (csum[ends[has_events]] - csum[starts[has_events]]) / n_events[has_events]
 
+    # QoE exposure: rebuffer minutes suffered during the CDN incident week
+    # (uid_s/ts_s/rbs_s are the same lexsort order — bincount pairs correctly)
+    incident_lo = int(
+        (np.datetime64(WINDOW_START + timedelta(days=INCIDENT_START)) - EPOCH)
+        / np.timedelta64(1, "ms"))
+    incident_hi = int(
+        (np.datetime64(WINDOW_START + timedelta(days=INCIDENT_END + 1)) - EPOCH)
+        / np.timedelta64(1, "ms"))
+    qoe = np.zeros(n, dtype=np.float64)
+    if rbs_s.size:
+        in_win = (ts_s >= incident_lo) & (ts_s < incident_hi) & (rbs_s > 0)
+        qoe_sums = np.bincount(uid_s[in_win], weights=rbs_s[in_win].astype(np.float64),
+                               minlength=n)
+        qoe = qoe_sums / 60.0                       # incident rebuffer minutes per user
+
     plan, channel = users["plan"], users["channel"]
     plan_hazard = np.array([1.15, 0.85, 0.60])[plan]
     chan_hazard = np.array([1.20, 1.00, 1.38, 0.82, 0.90])[channel]
@@ -412,6 +442,10 @@ def derive_churn(users: dict, out: dict, rng: np.random.Generator):
     # disengaged-but-still-around quiet quits
     quiet = (~inactive) & disengaged & (rng.random(n) < 0.38)
     churned = churned | quiet
+    # QoE-driven churn: heavy rebuffering during the CDN incident → quiet-exit
+    # risk (up to 45% for the worst-hit users)
+    qoe_quit = (~inactive) & (qoe >= 0.5) & (rng.random(n) < np.minimum(qoe / 6.0, 0.45))
+    churned = churned | qoe_quit
 
     churn_offset = np.minimum(rng.geometric(0.35, size=n), 60).astype(np.int32)
     churn_date = np.where(
