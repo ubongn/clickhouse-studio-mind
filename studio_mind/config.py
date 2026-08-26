@@ -57,7 +57,10 @@ class ClickHouseSettings:
     user: str = "default"
     password: str = ""
     database: str = "studio"
-    transport: str = "mcp"  # "mcp" (official mcp-clickhouse) or "http"
+    # "http" runs today via clickhouse-connect; "mcp" (official mcp-clickhouse
+    # server) is wired for the MCP console milestone — selecting it before that
+    # lands gives a clear error instead of a silent fallback.
+    transport: str = "http"
 
     @property
     def is_secure(self) -> bool:
@@ -76,14 +79,26 @@ class GeneratorSettings:
 
 
 @dataclass(frozen=True)
+class PipelineSettings:
+    """Runtime knobs for the ask→brief pipeline."""
+
+    query_timeout_s: int = 45
+    max_result_rows: int = 10_000
+    briefs_dir: Path = field(default_factory=lambda: Path("briefs"))
+    allow_no_llm: bool = True  # degrade to the deterministic path, never crash a demo
+
+
+@dataclass(frozen=True)
 class Settings:
     llm: LlmSettings
     ch: ClickHouseSettings
     generator: GeneratorSettings
+    pipeline: PipelineSettings = field(default_factory=PipelineSettings)
 
     def with_overrides(self, **kwargs) -> "Settings":
-        """Return a copy with ClickHouse settings overridden (used by the loader/CLI)."""
-        data = {"llm": self.llm, "ch": self.ch, "generator": self.generator}
+        """Return a copy with any section overridden (used by the loader/CLI)."""
+        data = {"llm": self.llm, "ch": self.ch,
+                "generator": self.generator, "pipeline": self.pipeline}
         for key, value in kwargs.items():
             section, _, attr = key.partition("__")
             if not attr:
@@ -111,7 +126,7 @@ def load_settings(env_file: str | Path | None = ".env") -> Settings:
             user=os.getenv("CLICKHOUSE_USER", "default"),
             password=os.getenv("CLICKHOUSE_PASSWORD", ""),
             database=os.getenv("CLICKHOUSE_DATABASE", "studio"),
-            transport=os.getenv("STUDIO_MIND_TRANSPORT", "mcp"),
+            transport=os.getenv("STUDIO_MIND_TRANSPORT", "http"),
         ),
         generator=GeneratorSettings(
             rows=_int(os.getenv("GENERATOR_ROWS"), 50_000_000),
@@ -120,4 +135,15 @@ def load_settings(env_file: str | Path | None = ".env") -> Settings:
             out_dir=Path(os.getenv("GENERATOR_OUT_DIR", str(Path("data") / "warehouse"))),
             load=_bool(os.getenv("GENERATOR_LOAD"), True),
         ),
+        pipeline=PipelineSettings(
+            query_timeout_s=_int(os.getenv("QUERY_TIMEOUT_S"), 45),
+            max_result_rows=_int(os.getenv("MAX_RESULT_ROWS"), 10_000),
+            briefs_dir=Path(os.getenv("BRIEFS_DIR", "briefs")),
+            allow_no_llm=_bool(os.getenv("ALLOW_NO_LLM"), True),
+        ),
     )
+
+
+def get_settings() -> Settings:
+    """Convenience: Settings from the default .env (or process env)."""
+    return load_settings()
