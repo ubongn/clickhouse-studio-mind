@@ -397,10 +397,7 @@ def derive_churn(users: dict, out: dict, rng: np.random.Generator):
            if len(out["rebuffer_seconds"]) else np.array([], dtype=np.uint16))
 
     n = users["user_id"].size
-    order = np.argsort(ts)
-    uid_s, ts_s, comp_s = uid[order], ts[order], comp[order]
-
-    # per-user aggregation via reduceat on sorted-by-(user, time): first sort by user then ts
+    # per-user aggregation via reduceat on sorted-by-(user, time)
     order2 = np.lexsort((ts, uid))
     uid_s, ts_s, comp_s = uid[order2], ts[order2], comp[order2]
     rbs_s = rbs[order2] if rbs.size else rbs       # aligned with uid_s/ts_s
@@ -437,10 +434,18 @@ def derive_churn(users: dict, out: dict, rng: np.random.Generator):
     chan_hazard = np.array([1.20, 1.00, 1.38, 0.82, 0.90])[channel]
 
     inactive = last_day < (np.datetime64(WINDOW_END) - np.timedelta64(21, "D"))
+    # lapse risk is channel-modulated: partnered/paid cohorts drift away faster
+    # than organic ones (~1.4x partnership vs organic — the churn-by-channel
+    # question has a real, honest answer in the data)
+    lapse_p = np.clip(0.86 * chan_hazard, 0.0, 1.0)
+    lapsed = inactive & (rng.random(n) < lapse_p)
     disengaged = (mean_comp < 0.40) & (n_events >= 6)
-    churned = inactive.copy()
-    # disengaged-but-still-around quiet quits
-    quiet = (~inactive) & disengaged & (rng.random(n) < 0.38)
+    churned = lapsed.copy()
+    # disengaged-but-still-around quiet quits; acquisition channel and plan
+    # modulate the risk (partnership 1.68x organic — the churn question has a
+    # real answer in the data)
+    p_quiet = 0.38 * chan_hazard * np.sqrt(plan_hazard)
+    quiet = (~inactive) & disengaged & (rng.random(n) < p_quiet)
     churned = churned | quiet
     # QoE-driven churn: heavy rebuffering during the CDN incident → quiet-exit
     # risk (up to 45% for the worst-hit users)
