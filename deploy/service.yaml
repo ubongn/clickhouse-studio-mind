@@ -1,0 +1,66 @@
+# Cloud Run service manifest — ClickHouse Studio Mind (hosted URL).
+#
+# Reproduce the deployment:
+#   1. cp .env.example .env   and fill CLICKHOUSE_PASSWORD (trial creds)
+#   2. python deploy/deploy.py --region europe-west6          # builds + deploys
+#      (or: gcloud run services replace deploy/service.yaml --region europe-west6
+#       after substituting IMAGE and __CLICKHOUSE_PASSWORD__ yourself)
+#
+# `deploy/deploy.py` performs the same chain over REST with a service-account
+# key (google-auth token mint) — no gcloud CLI required:
+#   Artifact Registry repo -> GCS source upload -> Cloud Build -> Cloud Run v2
+#   -> public invoker (allUsers) for unauthenticated judges.
+#
+# The __CLICKHOUSE_PASSWORD__ placeholder is substituted from the local .env
+# at deploy time; the real secret is never committed to this public repo.
+apiVersion: run.googleapis.com/v2
+kind: Service
+metadata:
+  name: studio-mind
+  labels:
+    app: studio-mind
+spec:
+  ingress: INGRESS_TRAFFIC_ALL
+  template:
+    metadata:
+      annotations:
+        # Keep exactly one warm instance: judges must not pay the MCP-subprocess
+        # spawn + ClickHouse Cloud cold-resume on their first question.
+        autoscaling.knative.dev/minScale: "1"
+    spec:
+      serviceAccountName: vertex-runner@agentic-cinema-506710.iam.gserviceaccount.com
+      containerConcurrency: 4
+      timeoutSeconds: 600
+      containers:
+      - name: app
+        image: __IMAGE__   # set by deploy.py (Artifact Registry digest)
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          periodSeconds: 2
+          timeoutSeconds: 10
+          failureThreshold: 30
+        env:
+        - name: CLICKHOUSE_URL
+          value: https://alkdlmz62g.germanywestcentral.azure.clickhouse.cloud:8443
+        - name: CLICKHOUSE_USER
+          value: default
+        - name: CLICKHOUSE_PASSWORD
+          value: __CLICKHOUSE_PASSWORD__
+        - name: CLICKHOUSE_DATABASE
+          value: studio
+        - name: STUDIO_MIND_TRANSPORT
+          value: mcp            # every runtime query via official mcp-clickhouse
+        - name: PROVIDER
+          value: vertex          # Google-only rule: Gemini via Vertex AI + ADC
+        - name: GEMINI_MODEL
+          value: gemini-2.5-flash
+        - name: GOOGLE_CLOUD_PROJECT
+          value: agentic-cinema-506710
+        - name: GOOGLE_CLOUD_LOCATION
+          value: us-central1     # Vertex AI location for gemini-2.5-flash (verified)

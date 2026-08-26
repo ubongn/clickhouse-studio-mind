@@ -40,3 +40,6 @@ Thumbs.db
 .idea/
 .vscode/
 briefs/
+  
+tmp_*  
+tmp_server2.log  

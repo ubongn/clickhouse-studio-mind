@@ -1,5 +1,7 @@
 # ClickHouse Studio Mind
 
+**Hosted URL (live demo):** <!-- HOSTED_URL --> `https://studio-mind.<project-id>.a.run.app` — one-question demo, no login; verification transcript: [docs/live-transcript-2026-08-26.md](docs/live-transcript-2026-08-26.md) · deploy/reproduce: `python deploy/deploy.py --region europe-west6`
+
 **An analytics agent for studio executives, built ClickHouse-native.**
 Ask a plain-English question about audience behavior → get a one-page decision brief where **every single number cites the exact SQL that produced it**.
 
@@ -20,6 +22,52 @@ ACTION   Order a re-edit of episodes 4-5 ahead of the international launch.
 Every `[Qn]` is clickable in the console: it opens the exact query, its plan, and the
 full result table. **No number exists in a brief that was not returned by ClickHouse.**
 That is the whole point: an agent with zero hallucination surface.
+
+---
+
+## Live demo
+
+The service runs on **Google Cloud Run** (Dockerfile in repo root, manifest in
+[`deploy/service.yaml`](deploy/service.yaml)): unauthenticated HTTP in, one
+container kept warm, and the full compliant runtime path on every question —
+the HTTP service (`studio_mind/server.py`) drives the pipeline, every warehouse
+query goes through the **official `mcp-clickhouse` server**, and every model
+call goes to **Gemini 2.5 Flash via Vertex AI** with Application Default
+Credentials (runtime service account — no API keys in the container).
+
+```bash
+# health (liveness + config; add ?deep=1 to SELECT 1 through mcp-clickhouse)
+curl "$URL/health?deep=1"
+#   {"status":"ok","transport":"mcp","provider":"vertex","model":"gemini-2.5-flash",
+#    "clickhouse":{"ok":true,"version":"26.2.1.558"}}
+
+# ask a real question end-to-end
+curl -s -X POST "$URL/ask" -H 'Content-Type: application/json' \
+     -d '{"question":"Which genres keep viewers past episode 3 in EMEA?"}'
+#   -> brief (markdown), evidence[] (exact SQL + rows per [Qn]), trace_tree,
+#      timings_ms per stage, intent. ~40s cold / seconds warm.
+
+# or just open $URL in a browser: type a question, watch the brief, the
+# evidence table, and the stage trace render.
+```
+
+A captured transcript of this exact flow (local server, container-identical
+runtime path, verified 2026-08-26) is committed at
+[docs/live-transcript-2026-08-26.md](docs/live-transcript-2026-08-26.md).
+
+**Reproduce the deployment** (no gcloud CLI needed — pure REST with a
+service-account key):
+
+```bash
+cp .env.example .env          # fill CLICKHOUSE_PASSWORD (trial creds)
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/deployer-key.json
+python deploy/deploy.py --region europe-west6
+#   Artifact Registry repo -> GCS source upload -> Cloud Build -> Cloud Run v2
+#   -> allUsers run.invoker (unauthenticated judges) -> health check + URL
+```
+
+Run the same service locally: `python -m studio_mind.server` →
+`http://localhost:8080`.
 
 ---
 

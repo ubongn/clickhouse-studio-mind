@@ -1,0 +1,14 @@
+# Never enters the build context (secrets + local noise)
+.env
+.venv
+.git
+.github
+.pytest_cache
+**/__pycache__
+*.egg-info
+briefs
+data/warehouse
+tmp_*
+tests
+docs
+examples
