@@ -1,5 +1,6 @@
 """MCP transport tests — the compliance path, exercised end-to-end over real
-stdio JSON-RPC against the fake official server. No ClickHouse required."""
+stdio JSON-RPC against a fake that mimics the OFFICIAL mcp-clickhouse server
+(PyPI mcp-clickhouse). No ClickHouse required."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import pytest
 from studio_mind.mcp_transport import (
     McpClient,
     McpTransportError,
-    _normalize_url_to_native,
+    _normalize_url,
 )
 
 FAKE = [sys.executable, str(Path(__file__).with_name("fake_mcp_server.py"))]
@@ -19,20 +20,22 @@ FAKE = [sys.executable, str(Path(__file__).with_name("fake_mcp_server.py"))]
 
 @pytest.fixture(scope="module")
 def client():
-    c = McpClient(host="localhost", port=9000, user="default", password="",
+    c = McpClient(host="localhost", port=8123, user="default", password="",
                   database="studio", server_command=FAKE)
     yield c
     c.close()
 
 
-def test_url_to_native_port_mapping():
-    assert _normalize_url_to_native("http://localhost:8123") == ("localhost", 9000, False)
-    # ClickHouse Cloud: HTTP 8443 remaps to the secure native port
-    assert _normalize_url_to_native("https://abc.aws.clickhouse.cloud:8443") == \
-        ("abc.aws.clickhouse.cloud", 9440, True)
-    assert _normalize_url_to_native("http://box:8123") == ("box", 9000, False)
+def test_url_http_port_passthrough():
+    # the official server speaks the HTTP interface: ports pass through as-is
+    assert _normalize_url("http://localhost:8123") == ("localhost", 8123, False)
+    assert _normalize_url("https://abc.aws.clickhouse.cloud:8443") == \
+        ("abc.aws.clickhouse.cloud", 8443, True)
+    # no port → HTTP default 8123, HTTPS default 8443
+    assert _normalize_url("http://box") == ("box", 8123, False)
+    assert _normalize_url("https://box") == ("box", 8443, True)
     # custom ports pass through untouched
-    assert _normalize_url_to_native("http://box:9100") == ("box", 9100, False)
+    assert _normalize_url("http://box:9100") == ("box", 9100, False)
 
 
 def test_query_roundtrip_and_shapes(client):
@@ -42,10 +45,10 @@ def test_query_roundtrip_and_shapes(client):
     assert res.rows_as_dicts == [{"ok": 1}]
 
 
-def test_tool_discovered_and_used(client):
-    # fake server exposes both tools; transport prefers select_query→falls
-    # back to execute_query (0.1.0 surface)
-    assert client._tool in ("select_query", "execute_query")
+def test_official_tool_discovered(client):
+    # official server surface: run_query + list_tables
+    assert client._tool == "run_query"
+    assert client._list_tool == "list_tables"
 
 
 def test_command_normalizes_explain_output(client):
@@ -54,7 +57,7 @@ def test_command_normalizes_explain_output(client):
     assert "ReadFromMergeTree" in out
 
 
-def test_list_tables(client):
+def test_list_tables_official_shape(client):
     tables = client.list_tables()
     names = {t["name"] for t in tables}
     assert {"viewing_events", "titles", "users", "episodes"} <= names
