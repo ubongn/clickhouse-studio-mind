@@ -350,8 +350,9 @@ def generate_events(users: dict, catalog: dict, target_rows: int, seed: int, log
             out["ep_number"].append(ep_number[erow])
             out["watched_seconds"].append(watched.astype(np.uint32))
             out["content_seconds"].append(content_s.astype(np.uint32))
-            out["completion_pct"].append(comp.astype(np.float32))
-            out["completed"].append((comp >= 0.9))
+            comp32 = comp.astype(np.float32)          # flag derived from the
+            out["completion_pct"].append(comp32)      # STORED value, so the two
+            out["completed"].append(comp32 >= 0.9)    # can never disagree
             out["ad_impressions"].append(ads.astype(np.uint8))
             out["ad_seconds"].append(ad_secs.astype(np.uint16))
             out["rebuffer_count"].append(rebuf.astype(np.uint8))
