@@ -7,7 +7,10 @@ import numpy as np
 import pytest
 
 from data.catalog import build_catalog
-from data.generate import derive_churn, generate_events, generate_users
+from data.generate import (
+    EPOCH, INCIDENT_END, INCIDENT_START, WINDOW_START, derive_churn,
+    generate_events, generate_users,
+)
 
 SEED = 20260826
 
@@ -43,8 +46,8 @@ def test_column_shapes_agree(toy):
     n = _col(out, "user_id").size
     for key in ("event_time_ms", "title_id", "episode_id", "season_no", "ep_number",
                 "watched_seconds", "content_seconds", "completion_pct", "completed",
-                "ad_impressions", "ad_seconds", "device_idx", "region_idx", "plan_idx",
-                "session_pos"):
+                "ad_impressions", "ad_seconds", "rebuffer_count", "rebuffer_seconds",
+                "device_idx", "region_idx", "plan_idx", "session_pos"):
         assert _col(out, key).size == n, key
 
 
@@ -97,3 +100,62 @@ def test_churn_derivation(toy):
     import datetime as dt
     d = churn_date[churned]
     assert (d >= np.datetime64("2024-07-01")).all()
+
+
+def _day_offsets(out):
+    ts = _col(out, "event_time_ms").astype("int64")
+    day0 = int((np.datetime64(WINDOW_START) - EPOCH) / np.timedelta64(1, "ms"))
+    return (ts - day0) // 86_400_000
+
+
+def test_rebuffer_bounds(toy):
+    """Every stall lasts 2-8 seconds; most events never stall."""
+    catalog, users, out, rows, sessions = toy
+    rbc = _col(out, "rebuffer_count").astype(np.int64)
+    rbs = _col(out, "rebuffer_seconds").astype(np.int64)
+    assert (rbs >= 2 * rbc).all() and (rbs <= 8 * rbc).all()
+    assert (rbc == 0).mean() > 0.6          # stalls are the exception, not the rule
+
+
+def test_cdn_incident_is_findable(toy):
+    """The seeded CDN week must stand out: NA mobile+desktop rebuffer heavily
+    that week while every other segment stays flat (diff-in-diff)."""
+    catalog, users, out, rows, sessions = toy
+    day_off = _day_offsets(out)
+    dev, reg = _col(out, "device_idx"), _col(out, "region_idx")
+    rbc = _col(out, "rebuffer_count").astype(np.int64)
+    md = (dev == 1) | (dev == 2)
+    hit = (day_off >= INCIDENT_START) & (day_off <= INCIDENT_END) & (reg == 0) & md
+    same_week_md_elsewhere = (
+        (day_off >= INCIDENT_START) & (day_off <= INCIDENT_END) & (reg != 0) & md
+    )
+    assert hit.sum() > 100                       # enough rows to be queryable
+    assert rbc[hit].mean() > 2.5                 # the incident group stalls hard
+    assert rbc[same_week_md_elsewhere].mean() < 1.0
+    assert rbc[~hit].mean() < 1.0                # baseline stays quiet
+
+
+def test_qoe_exposure_drives_churn(toy):
+    """Users who rebuffered through the incident churn more than low-qoe peers."""
+    catalog, users, out, rows, sessions = toy
+    ts = _col(out, "event_time_ms").astype("int64")
+    uid, rbs = _col(out, "user_id"), _col(out, "rebuffer_seconds").astype(np.int64)
+    day0 = int((np.datetime64(WINDOW_START) - EPOCH) / np.timedelta64(1, "ms"))
+    lo = day0 + INCIDENT_START * 86_400_000
+    hi = day0 + (INCIDENT_END + 1) * 86_400_000
+    in_win = (ts >= lo) & (ts < hi) & (rbs > 0)
+    n = users["user_id"].size
+    qoe = np.bincount(uid[in_win], weights=rbs[in_win].astype(float), minlength=n) / 60.0
+    churned, _, _, n_events = derive_churn(users, out, np.random.default_rng(SEED + 2))
+    exposed = churned[qoe >= 0.5].mean()
+    low_qoe_active = churned[(qoe < 0.1) & (n_events > 0)].mean()
+    assert exposed > low_qoe_active + 0.05
+
+
+def test_partnership_churns_faster_than_organic(toy):
+    """The churn-by-channel question has a baked-in answer (~1.4x)."""
+    catalog, users, out, rows, sessions = toy
+    churned, _, _, _ = derive_churn(users, out, np.random.default_rng(SEED + 2))
+    ch = users["channel"]
+    part, org = churned[ch == 2].mean(), churned[ch == 3].mean()
+    assert part > org * 1.2
