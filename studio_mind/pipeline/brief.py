@@ -72,7 +72,7 @@ def build(question: str, intent: dict, primary: list[Evidence],
     add("---")
     add("## Appendix — evidence (the exact SQL behind every number)")
     for ev in registry.all():
-        status = f"⚠ {ev.error}" if ev.error else f"{ev.row_count} rows · {ev.elapsed_ms:.0f} ms"
+        status = f"⚠ {ev.error}" if ev.error else ev.trust_line()
         add(f"\n### [{ev.id}] {ev.purpose}\n`{status}`\n")
         add("```sql")
         add(ev.sql)
