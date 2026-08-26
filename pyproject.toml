@@ -7,9 +7,9 @@ requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "ubongn" }]
 dependencies = [
-    "clickhouse-connect>=0.8.0",
-    "clickhouse-mcp-server>=0.1.0",   # official ClickHouse MCP server (runtime path)
-    "mcp>=1.9,<2",                    # MCP SDK client (FastMCP-era APIs)
+    "clickhouse-connect>=0.8.16",
+    "mcp-clickhouse>=0.4.1",           # OFFICIAL ClickHouse MCP server (runtime path)
+    "mcp>=1.9,<2",                    # MCP SDK client
     "google-genai>=1.0.0",
     "numpy>=1.26",
     "python-dotenv>=1.0",
