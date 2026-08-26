@@ -69,6 +69,38 @@ python deploy/deploy.py --region europe-west6
 Run the same service locally: `python -m studio_mind.server` →
 `http://localhost:8080`.
 
+The stack, end to end:
+
+```text
+ browser / curl ──HTTPS──▶ Cloud Run  (FastAPI — studio_mind/server.py)
+                               │   deterministic five-stage pipeline (Python)
+                               ├──▶ official mcp-clickhouse server   [stdio subprocess]
+                               │         └──▶ ClickHouse Cloud       [HTTP, read-only]
+                               └──▶ Gemini 2.5 Flash via Vertex AI   [ADC, no API keys]
+```
+
+---
+
+## Runtime evidence (partner API in the runtime path)
+
+Every runtime analytics query goes through the **official ClickHouse MCP server**
+([github.com/ClickHouse/mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse))
+— in the served demo and by default, not just in CI or docs. Exact anchors:
+
+| What | Where |
+|---|---|
+| Official server module pinned | `studio_mind/mcp_transport.py:50` — `MCP_SERVER_MODULE = "mcp_clickhouse.main"` |
+| Spawned as a stdio subprocess | `studio_mind/mcp_transport.py:186` (command) and `:203` (`StdioServerParameters`) |
+| Official tool surface discovered | `studio_mind/mcp_transport.py:214` — `session.list_tools()` |
+| Official `run_query` tool invoked | `studio_mind/mcp_transport.py:216` (selection) and `:232` — `session.call_tool(...)` |
+| Default transport is `mcp` | `studio_mind/config.py:63` (dataclass default) and `:129` (`STUDIO_MIND_TRANSPORT` env default) |
+| Transport wiring | `studio_mind/ch.py:55` — `transport=mcp → McpClient` (http → clickhouse-connect dev fallback) |
+| HTTP service runs it | `studio_mind/server.py:97` (`/health?deep=1` → `SELECT version()` via MCP) and `:118` (`/ask` → full pipeline) |
+| Cloud Run sets it | `deploy/service.yaml:57` — `STUDIO_MIND_TRANSPORT: mcp` |
+| Official package is a runtime dep | `pyproject.toml:11` — `mcp-clickhouse>=0.4.1` (PyPI) |
+
+Verify yourself: `grep -rn "mcp_clickhouse" studio_mind/` — every hit is the runtime path.
+
 ---
 
 ## Why this is a ClickHouse project, not a BI dashboard
@@ -102,8 +134,11 @@ powers each stage, but the pipeline — not the model — controls execution:
 1. **PARSE** — the question becomes a structured analytics intent (metrics, dimensions,
    time window, segments) using Gemini structured output.
 2. **QUERY** — intent compiles to ClickHouse SQL. Every query is validated
-   (read-only AST check, `EXPLAIN`), executed via `clickhouse-connect`, and sanity-checked
-   (row counts, magnitudes, empty results) before it is allowed to become evidence.
+   (read-only AST check, `EXPLAIN`), executed through the **official `mcp-clickhouse`
+   server** (see [Runtime evidence](#runtime-evidence-partner-api-in-the-runtime-path);
+   the direct `clickhouse-connect` client is the bulk-seed / dev-fallback path), and
+   sanity-checked (row counts, magnitudes, empty results) before it is allowed to
+   become evidence.
 3. **DIAGNOSE** — Gemini forms hypotheses about *why* the numbers look that way and
    tests each one with additional queries against episode metadata, ad-load exposure,
    release cadence, and cohort behavior. Hypotheses that don't survive the data are
@@ -144,13 +179,23 @@ studio-mind ask --show-evidence Q3   # inspect any cited number
 See `docs/local-clickhouse.md` for running a local ClickHouse (Windows/WSL/macOS/Linux)
 and pointing Studio Mind at ClickHouse Cloud instead.
 
+**Cloud** — two options: use the hosted demo (URL at the top of this README), or
+deploy your own with the one-command REST deploy:
+
+```bash
+cp .env.example .env                              # fill CLICKHOUSE_PASSWORD
+export GOOGLE_APPLICATION_CREDENTIALS=key.json    # deployer service-account key
+python deploy/deploy.py --region europe-west6     # build + deploy + public URL
+```
+
 ## Status
 
 - [x] Deterministic evidence pipeline (PARSE → QUERY → DIAGNOSE → RECOMMEND → BRIEF)
 - [x] 50M-event reproducible dataset + ClickHouse schema (MergeTree, MVs, LowCardinality)
 - [x] CLI with evidence inspection
+- [x] Web console with clickable evidence, light theme — `python -m studio_mind.server`
+- [x] One-command Cloud Run deploy (pure REST, no gcloud CLI) — `deploy/deploy.py`
 - [ ] MCP server (ask Studio Mind from any MCP client)
-- [ ] Web console with clickable evidence (light theme)
 
 ## License
 

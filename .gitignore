@@ -39,7 +39,6 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+# --- local artifacts (not part of the repo) ---
 briefs/
-  
-tmp_*  
-tmp_server2.log  
+tmp_*
