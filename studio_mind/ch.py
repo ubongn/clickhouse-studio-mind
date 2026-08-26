@@ -25,6 +25,25 @@ from .evidence import EvidenceRegistry
 from .sqlguard import SQLRejected, validate_sql
 
 
+def url_parts(url: str) -> dict:
+    """Normalize a CLICKHOUSE_URL into clickhouse-connect kwargs.
+
+    clickhouse-connect's get_client takes host/port/secure (dsn= for URLs);
+    passing url= raises TypeError on 1.7.x. One helper, both call sites
+    (the http dev fallback here and the bulk loader in data/generate.py).
+    """
+    from urllib.parse import urlparse
+
+    u = urlparse(url if "://" in url else "http://" + url)
+    secure = u.scheme == "https"
+    return {
+        "host": u.hostname,
+        "port": u.port or (8443 if secure else 8123),
+        "interface": "https" if secure else "http",
+        "secure": secure,
+    }
+
+
 def get_client(settings: Settings | None = None):
     """Return the runtime client for the configured transport.
 
@@ -38,11 +57,11 @@ def get_client(settings: Settings | None = None):
 
         return McpClient.from_settings(s)
     return clickhouse_connect.get_client(
-        url=s.ch.url,
         username=s.ch.user,
         password=s.ch.password,
         database=s.ch.database,
         settings={"max_execution_time": s.pipeline.query_timeout_s},
+        **url_parts(s.ch.url),
     )
 
 

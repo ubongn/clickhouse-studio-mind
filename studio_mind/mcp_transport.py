@@ -95,8 +95,8 @@ class _LoopThread:
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
 
-    def run(self, coro):
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout=120)
+    def run(self, coro, timeout: float = 120):
+        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout=timeout)
 
     def stop(self) -> None:
         self.loop.call_soon_threadsafe(self.loop.stop)
@@ -117,10 +117,19 @@ class McpClient:
     # ``server_command`` lets tests point the client at a fake MCP server.
     def __init__(self, host: str, port: int, user: str, password: str,
                  database: str = "studio", secure: bool = False,
-                 readonly: bool = True, server_command: list[str] | None = None):
+                 readonly: bool = True, server_command: list[str] | None = None,
+                 query_timeout_s: int = 45):
         self.host, self.port, self.user = host, port, user
         self.password, self.database = password, database
         self.secure, self.readonly = secure, readonly
+        # Cloud quirk: ClickHouse Cloud services auto-suspend when idle; the
+        # first query after a wake-up pays a cold-resume (observed >30s) that
+        # the official server's CLICKHOUSE_MCP_QUERY_TIMEOUT default of 30s
+        # kills from the inside. Give the server max(120, qs+60) so a waking
+        # service survives, and keep OUR call timeout above the server's.
+        self.query_timeout_s = query_timeout_s
+        self._server_query_timeout = max(120, query_timeout_s + 60)
+        self._call_timeout = self._server_query_timeout + 30
         self._server_command = server_command
         self._loop = _LoopThread()
         self._session = None
@@ -142,7 +151,8 @@ class McpClient:
         if override:
             override = json.loads(override) if override.startswith("[") else override.split()
         return cls(host=host, port=port, user=ch.user, password=ch.password,
-                   database=ch.database, secure=secure, server_command=override)
+                   database=ch.database, secure=secure, server_command=override,
+                   query_timeout_s=settings.pipeline.query_timeout_s)
 
     # -- MCP plumbing -----------------------------------------------------------
 
@@ -187,6 +197,9 @@ class McpClient:
             # official server default; state it explicitly so the trust story
             # is greppable: writes are refused inside the MCP server
             env["CLICKHOUSE_ALLOW_WRITE_ACCESS"] = "false"
+        # keep the server's own query timeout above ClickHouse Cloud's
+        # cold-resume cost (auto-suspended services take >30s to wake)
+        env["CLICKHOUSE_MCP_QUERY_TIMEOUT"] = str(self._server_query_timeout)
         params = StdioServerParameters(
             command=command[0],
             args=command[1:],
@@ -216,7 +229,8 @@ class McpClient:
     def _call(self, tool: str, arguments: dict) -> Any:
         if self._session is None:
             raise McpTransportError("session not started")
-        result = self._loop.run(self._session.call_tool(tool, arguments))
+        result = self._loop.run(self._session.call_tool(tool, arguments),
+                                timeout=self._call_timeout)
         if getattr(result, "isError", False):
             raise McpTransportError(f"tool {tool} failed: {result.content}")
         return result
