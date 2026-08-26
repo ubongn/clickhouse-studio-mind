@@ -110,28 +110,43 @@ def run_query(client, registry: EvidenceRegistry, purpose: str, sql: str,
         pass  # EXPLAIN is a transparency aid, not a gate
 
     t0 = time.perf_counter()
-    try:
-        res = client.query(safe_sql)
-        elapsed = (time.perf_counter() - t0) * 1000
-        # trust panel: server-side scan stats through the same transport
-        stats = None
-        query_stats = getattr(client, "query_stats", None)
-        if query_stats is not None:
-            try:
-                stats = query_stats()
-            except Exception:
-                stats = None
-        ev = registry.add(
-            purpose=purpose, sql=safe_sql,
-            columns=list(res.column_names),
-            rows=[list(r) for r in res.result_rows],
-            elapsed_ms=elapsed, plan=plan,
-            read_rows=(stats or {}).get("read_rows"),
-            read_size=(stats or {}).get("read_size"),
-            server_ms=float((stats or {}).get("query_duration_ms") or 0.0) or None,
-        )
-        return ev
-    except Exception as e:
-        elapsed = (time.perf_counter() - t0) * 1000
-        return registry.add(purpose=purpose, sql=safe_sql, elapsed_ms=elapsed,
-                            plan=plan, error=str(e)[:500])
+    from . import tracing
+
+    span_ctx = tracing.maybe_tool_span(
+        f"mcp-clickhouse · {getattr(client, '_tool', 'select_query')}", safe_sql)
+    with span_ctx as span:
+        try:
+            res = client.query(safe_sql)
+            elapsed = (time.perf_counter() - t0) * 1000
+            # trust panel: server-side scan stats through the same transport
+            stats = None
+            query_stats = getattr(client, "query_stats", None)
+            if query_stats is not None:
+                try:
+                    stats = query_stats()
+                except Exception:
+                    stats = None
+            ev = registry.add(
+                purpose=purpose, sql=safe_sql,
+                columns=list(res.column_names),
+                rows=[list(r) for r in res.result_rows],
+                elapsed_ms=elapsed, plan=plan,
+                read_rows=(stats or {}).get("read_rows"),
+                read_size=(stats or {}).get("read_size"),
+                server_ms=float((stats or {}).get("query_duration_ms") or 0.0) or None,
+            )
+            span.metadata.update({
+                "evidence_id": ev.id,
+                "wall_ms": round(elapsed, 1),
+                "server_ms": ev.server_ms,
+                "read_rows": ev.read_rows,
+                "read_size": ev.read_size,
+                "rows_returned": ev.row_count,
+                "plan_captured": plan is not None,
+            })
+            return ev
+        except Exception as e:
+            elapsed = (time.perf_counter() - t0) * 1000
+            span.metadata.update({"wall_ms": round(elapsed, 1)})
+            return registry.add(purpose=purpose, sql=safe_sql, elapsed_ms=elapsed,
+                                plan=plan, error=str(e)[:500])

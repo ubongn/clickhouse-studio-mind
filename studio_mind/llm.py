@@ -72,40 +72,62 @@ class LLM:
 
     # -- API ------------------------------------------------------------------
     def generate(self, prompt: str, system: str = "") -> str:
-        try:
-            resp = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config={"system_instruction": system} if system else None,
-            )
-            text = (resp.text or "").strip()
-            if not text:
-                raise LLMError("empty model response")
-            return text
-        except LLMError:
-            raise
-        except Exception as e:  # SDK errors → single error type for callers
-            raise LLMError(f"gemini call failed: {e}") from e
+        from . import tracing
+
+        with tracing.maybe_llm_span("gemini · generate", self.model, prompt) as span:
+            try:
+                resp = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config={"system_instruction": system} if system else None,
+                )
+                text = (resp.text or "").strip()
+                if not text:
+                    raise LLMError("empty model response")
+                span.output = text[:500]
+                span.usage = _usage(resp)
+                return text
+            except LLMError:
+                raise
+            except Exception as e:  # SDK errors → single error type for callers
+                raise LLMError(f"gemini call failed: {e}") from e
 
     def structured(self, prompt: str, schema: dict, system: str = "") -> dict:
         """Schema-enforced JSON response. `schema` is a JSON-schema dict."""
-        try:
-            resp = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config={
-                    **({"system_instruction": system} if system else {}),
-                    "response_mime_type": "application/json",
-                    "response_schema": schema,
-                },
-            )
-            text = (resp.text or "").strip()
-            if not text:
-                raise LLMError("empty structured response")
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            raise LLMError(f"model returned invalid JSON: {e}") from e
-        except LLMError:
-            raise
-        except Exception as e:
-            raise LLMError(f"gemini structured call failed: {e}") from e
+        from . import tracing
+
+        with tracing.maybe_llm_span("gemini · structured", self.model, prompt) as span:
+            try:
+                resp = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config={
+                        **({"system_instruction": system} if system else {}),
+                        "response_mime_type": "application/json",
+                        "response_schema": schema,
+                    },
+                )
+                text = (resp.text or "").strip()
+                if not text:
+                    raise LLMError("empty structured response")
+                span.output = text[:500]
+                span.usage = _usage(resp)
+                return json.loads(text)
+            except json.JSONDecodeError as e:
+                raise LLMError(f"model returned invalid JSON: {e}") from e
+            except LLMError:
+                raise
+            except Exception as e:
+                raise LLMError(f"gemini structured call failed: {e}") from e
+
+
+def _usage(resp) -> dict[str, int]:
+    """Token usage from a google-genai response, when the SDK reports it."""
+    u = getattr(resp, "usage_metadata", None)
+    if u is None:
+        return {}
+    return {
+        "input": getattr(u, "prompt_token_count", 0) or 0,
+        "output": getattr(u, "candidates_token_count", 0) or 0,
+        "total": getattr(u, "total_token_count", 0) or 0,
+    }

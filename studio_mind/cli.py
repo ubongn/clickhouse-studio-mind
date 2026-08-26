@@ -92,6 +92,9 @@ def main(argv: list[str] | None = None) -> int:
         print(result.brief)
         print(f"\n[saved] {result.brief_path}")
 
+    if result.trace_tree:
+        print("\n" + result.trace_tree)
+
     return 0
 
 
