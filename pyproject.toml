@@ -1,0 +1,34 @@
+[project]
+name = "studio-mind"
+version = "0.1.0"
+description = "ClickHouse Studio Mind — a ClickHouse-native analytics agent that answers studio executives' questions with evidence-cited decision briefs."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "ubongn" }]
+dependencies = [
+    "clickhouse-connect>=0.8.0",
+    "google-genai>=1.0.0",
+    "numpy>=1.26",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+studio-mind = "studio_mind.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["studio_mind*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

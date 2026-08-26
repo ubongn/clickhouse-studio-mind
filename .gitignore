@@ -1,0 +1,41 @@
+# --- secrets & env ---
+.env
+.env.local
+*.key
+agentic-cinema-creds.txt
+
+# --- generated data & binaries (regenerate with python -m data.generate) ---
+data/output/
+*.parquet
+*.clickhouse
+clickhouse
+clickhouse.exe
+clickhouse-common-static-*.tgz
+ubuntu-noble-wsl.rootfs.tar.gz
+debian-rootfs.tar.xz
+
+# --- ClickHouse server runtime state ---
+ch-data/
+ch-logs/
+*.clickhouse_parts/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# --- node (web console, upcoming) ---
+node_modules/
+
+# --- tooling / OS ---
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
