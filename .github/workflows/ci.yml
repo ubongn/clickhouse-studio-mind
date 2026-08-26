@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # ---------------------------------------------------------------- tests --
+  # Full offline suite, including the MCP protocol tests: a fake server that
+  # mimics the OFFICIAL mcp-clickhouse tool surface (run_query / list_tables)
+  # over real stdio JSON-RPC. No secrets, no ClickHouse needed.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Unit + protocol tests (fake official MCP server over stdio)
+        run: python -m pytest -q
+
+  # ------------------------------------------------------------------- e2e --
+  # The full loop on a real ClickHouse service container:
+  #   toy-scale generator → schema + bulk load (clickhouse-connect, the one
+  #   allowed direct path) → 3 executive questions answered through the
+  #   OFFICIAL mcp-clickhouse server (STUDIO_MIND_TRANSPORT=mcp, spawned
+  #   stdio, read-only enforced inside the server) → briefs whose every
+  #   number cites its SQL, verified mechanically.
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:25.3
+        ports:
+          - 8123:8123
+        env:
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: studio-ci
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+        options: >-
+          --health-cmd "clickhouse-client --password studio-ci --query 'SELECT 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 15s
+    env:
+      CLICKHOUSE_URL: http://localhost:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: studio-ci
+      CLICKHOUSE_DATABASE: studio
+      STUDIO_MIND_TRANSPORT: mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e .
+      - name: Wait for ClickHouse HTTP interface
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s --fail "http://localhost:8123/ping"; then echo " up"; exit 0; fi
+            sleep 2
+          done
+          echo "ClickHouse never became ready"; exit 1
+      - name: Generate + load toy warehouse (300k events, seed 20260826)
+        run: python -m data.generate --rows 300000 --users 10000
+      - name: Answer 3 exec questions through the official mcp-clickhouse server
+        run: python -m examples.run_examples --no-llm
+      - name: Verify every brief cites its SQL (scan receipts included)
+        run: python -m examples.verify_briefs
