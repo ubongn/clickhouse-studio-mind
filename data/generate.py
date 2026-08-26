@@ -508,10 +508,12 @@ def main() -> None:
     from data.load import load_all  # noqa: E402
     from studio_mind.ch import url_parts  # url → host/port/secure (1.7.x compat)
 
+    # no database= here on purpose: schema.sql CREATES the target database, and
+    # clickhouse-connect refuses to connect to a database that does not exist
+    # yet. All inserts/DDL in load.py are fully-qualified ({database}.table).
     client = clickhouse_connect.get_client(
         username=os.getenv("CLICKHOUSE_USER", "default"),
         password=os.getenv("CLICKHOUSE_PASSWORD", ""),
-        database=args.database,
         **url_parts(os.getenv("CLICKHOUSE_URL", "http://localhost:8123")),
     )
     load_all(client, catalog, users, out, churned, churn_date, last_day, database=args.database)

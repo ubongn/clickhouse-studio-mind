@@ -89,9 +89,10 @@ def load_events(client, out: dict, database: str = "studio") -> int:
     loaded = 0
     for lo, hi in _batches(n):
         ev_ms = np.concatenate(out["event_time_ms"])[lo:hi]
-        ev_dt64 = (ev_ms.astype("datetime64[ms]"))
+        # tolist(): numpy datetime64 → Python datetime (pure-python serializer
+        # on this stack has no .timestamp() for numpy scalars)
         cols = dict(
-            event_time=ev_dt64,
+            event_time=(ev_ms.astype("datetime64[ms]")).tolist(),
             user_id=np.concatenate(out["user_id"])[lo:hi],
             title_id=np.concatenate(out["title_id"])[lo:hi],
             episode_id=np.concatenate(out["episode_id"])[lo:hi],
@@ -111,8 +112,11 @@ def load_events(client, out: dict, database: str = "studio") -> int:
             is_binge=np.concatenate(out["is_binge"])[lo:hi],
             session_pos=np.concatenate(out["session_pos"])[lo:hi],
         )
-        client.insert(f"{database}.viewing_events", cols,
-                      column_names=list(cols.keys()))
+        # clickhouse-connect 1.7.x columnar insert: data must be a LIST of
+        # column arrays (dict input is not auto-detected) + column_oriented
+        client.insert(f"{database}.viewing_events", list(cols.values()),
+                      column_names=list(cols.keys()),
+                      column_oriented=True)
         loaded += hi - lo
         dt = time.time() - t0
         print(f"[load]    events {loaded:,}/{n:,} ({loaded/max(dt,0.01):,.0f} rows/s)")
