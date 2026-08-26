@@ -86,7 +86,7 @@ def _run_with_client(question: str, s: Settings, client,
     # titles glossary (deterministic entity binding)
     try:
         titles = client.query(
-            f"SELECT title_id, title_name FROM {s.ch_database}.titles "
+            f"SELECT title_id, title_name FROM {s.ch.database}.titles "
             f"ORDER BY popularity DESC"
         ).result_rows
     except Exception:
@@ -104,7 +104,7 @@ def _run_with_client(question: str, s: Settings, client,
     schema_brief = ""
     if llm is not None:
         try:
-            schema_brief = ch.schema_context(client, s.ch_database)
+            schema_brief = ch.schema_context(client, s.ch.database)
         except Exception:
             schema_brief = ""
     with collector.span("stage · query", input_=intent):
