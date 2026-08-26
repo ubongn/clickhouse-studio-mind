@@ -1,11 +1,17 @@
-"""ClickHouse access layer — works against any ClickHouse instance.
+"""ClickHouse access layer — transport selector + shared query runner.
 
-connection: CLICKHOUSE_URL (http://localhost:8123, remote server, or
-https://…:8443 ClickHouse Cloud). Every analytics query:
+Two transports, one decision: runtime analytics default to the OFFICIAL
+mcp-clickhouse server (spawned stdio, driven over MCP — the connection the
+hackathon checks). ``STUDIO_MIND_TRANSPORT=http`` switches to a direct
+clickhouse-connect client for dev without an MCP server, and the 50M-row
+loader uses clickhouse-connect regardless (bulk insert path, not runtime).
+
+Every analytics query, on either transport:
   1. passes sqlguard validation (read-only, capped)
   2. is EXPLAINed (shape captured for the evidence record)
   3. executes with a time guard
-  4. is recorded in the EvidenceRegistry with its full result
+  4. is recorded in the EvidenceRegistry with its full result + server-side
+     scan stats when the MCP transport provides them (trust panel numbers)
 """
 
 from __future__ import annotations
@@ -20,12 +26,17 @@ from .sqlguard import SQLRejected, validate_sql
 
 
 def get_client(settings: Settings | None = None):
+    """Return the runtime client for the configured transport.
+
+    transport=mcp  → official mcp-clickhouse server over stdio (default, the
+                     compliant demo path — see mcp_transport.McpClient)
+    transport=http → direct clickhouse-connect client (dev fallback)
+    """
     s = settings or get_settings()
     if s.ch.transport == "mcp":
-        raise RuntimeError(
-            'STUDIO_MIND_TRANSPORT=mcp lands with the MCP console milestone; '
-            'set STUDIO_MIND_TRANSPORT=http (default) to query via clickhouse-connect'
-        )
+        from .mcp_transport import McpClient
+
+        return McpClient.from_settings(s)
     return clickhouse_connect.get_client(
         url=s.ch.url,
         username=s.ch.user,
@@ -33,6 +44,16 @@ def get_client(settings: Settings | None = None):
         database=s.ch.database,
         settings={"max_execution_time": s.pipeline.query_timeout_s},
     )
+
+
+def close_client(client) -> None:
+    """MCP clients own a subprocess; clickhouse-connect clients don't."""
+    close = getattr(client, "close", None)
+    if close and client.__class__.__module__.startswith("studio_mind"):
+        try:
+            close()
+        except Exception:
+            pass
 
 
 def schema_context(client, database: str | None = None) -> str:
@@ -92,11 +113,22 @@ def run_query(client, registry: EvidenceRegistry, purpose: str, sql: str,
     try:
         res = client.query(safe_sql)
         elapsed = (time.perf_counter() - t0) * 1000
+        # trust panel: server-side scan stats through the same transport
+        stats = None
+        query_stats = getattr(client, "query_stats", None)
+        if query_stats is not None:
+            try:
+                stats = query_stats()
+            except Exception:
+                stats = None
         ev = registry.add(
             purpose=purpose, sql=safe_sql,
             columns=list(res.column_names),
             rows=[list(r) for r in res.result_rows],
             elapsed_ms=elapsed, plan=plan,
+            read_rows=(stats or {}).get("read_rows"),
+            read_size=(stats or {}).get("read_size"),
+            server_ms=float((stats or {}).get("query_duration_ms") or 0.0) or None,
         )
         return ev
     except Exception as e:

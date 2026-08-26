@@ -36,6 +36,14 @@ def run_pipeline(question: str, settings: Settings | None = None,
     timings: dict[str, float] = {}
 
     client = ch.get_client(s)
+    try:
+        return _run_with_client(question, s, client, use_llm, t_start, timings)
+    finally:
+        ch.close_client(client)
+
+
+def _run_with_client(question: str, s: Settings, client,
+                     use_llm: bool, t_start: float, timings: dict) -> RunResult:
     registry = EvidenceRegistry()
 
     llm: LLM | None = None

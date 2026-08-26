@@ -23,10 +23,25 @@ class Evidence:
     elapsed_ms: float = 0.0
     plan: str | None = None      # ClickHouse EXPLAIN (shape transparency)
     error: str | None = None
+    # trust panel — server-side facts about the scan (MCP transport)
+    read_rows: int | None = None    # rows ClickHouse actually read
+    read_size: str | None = None    # bytes read, human-readable
+    server_ms: float | None = None  # server-side query duration
 
     @property
     def ok(self) -> bool:
         return self.error is None
+
+    def trust_line(self) -> str:
+        """One-line scan receipt for the trust panel / brief footer."""
+        bits = [f"{self.elapsed_ms:.0f} ms wall"]
+        if self.server_ms is not None:
+            bits.append(f"{self.server_ms:.0f} ms server")
+        if self.read_rows is not None:
+            bits.append(f"{self.read_rows:,} rows scanned")
+        if self.read_size:
+            bits.append(self.read_size)
+        return " · ".join(bits)
 
     def head(self, n: int = 8) -> list[list[Any]]:
         return self.rows[:n]
@@ -59,13 +74,16 @@ class EvidenceRegistry:
 
     def add(self, purpose: str, sql: str, *, columns: list[str] | None = None,
             rows: list[list[Any]] | None = None, elapsed_ms: float = 0.0,
-            plan: str | None = None, error: str | None = None) -> Evidence:
+            plan: str | None = None, error: str | None = None,
+            read_rows: int | None = None, read_size: str | None = None,
+            server_ms: float | None = None) -> Evidence:
         self._n += 1
         ev = Evidence(
             id=f"Q{self._n}", purpose=purpose, sql=sql.strip(),
             columns=columns or [], rows=rows or [],
             row_count=len(rows or []), elapsed_ms=round(elapsed_ms, 1),
             plan=plan, error=error,
+            read_rows=read_rows, read_size=read_size, server_ms=server_ms,
         )
         self._items[ev.id] = ev
         return ev
