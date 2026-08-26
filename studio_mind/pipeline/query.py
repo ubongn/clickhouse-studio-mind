@@ -112,7 +112,11 @@ ORDER BY cohort, wk
             "region": "v.region", "plan": "v.plan", "device": "v.device",
             "genre": "t.genre", "acquisition_channel": "u.acquisition_channel",
         }
-        dim = next((dim_map[k] for k in dim_map if intent.get(k)), None)
+        # explicit "which genres ..." grouping wins; else first set filter dim
+        gb = intent.get("group_by")
+        dim = dim_map.get(gb) if gb else None
+        if dim is None:
+            dim = next((dim_map[k] for k in dim_map if intent.get(k)), None)
         if dim is None:
             dim = "v.region"
         join_t = " INNER JOIN titles t ON t.title_id = v.title_id" if dim == "t.genre" else ""

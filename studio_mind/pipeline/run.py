@@ -136,7 +136,7 @@ def _run_with_client(question: str, s: Settings, client,
     with collector.span("stage · brief"):
         text = brief_stage.build(question, intent, primary, diagnosis, actions,
                                  registry, meta=meta)
-        path = brief_stage.save(text, question, s.briefs_dir)
+        path = brief_stage.save(text, question, s.pipeline.briefs_dir)
     timings["brief_ms"] = (time.perf_counter() - t0) * 1000
     timings["total_ms"] = (time.perf_counter() - t_start) * 1000
 
