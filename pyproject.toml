@@ -8,6 +8,8 @@ license = { file = "LICENSE" }
 authors = [{ name = "ubongn" }]
 dependencies = [
     "clickhouse-connect>=0.8.0",
+    "clickhouse-mcp-server>=0.1.0",   # official ClickHouse MCP server (runtime path)
+    "mcp>=1.9,<2",                    # MCP SDK client (FastMCP-era APIs)
     "google-genai>=1.0.0",
     "numpy>=1.26",
     "python-dotenv>=1.0",

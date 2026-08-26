@@ -19,7 +19,7 @@ def test_defaults_match_documented_shapes(tmp_path):
     assert settings.llm.model == "gemini-2.5-flash"
     assert settings.ch.url == "http://localhost:8123"
     assert settings.ch.database == "studio"
-    assert settings.ch.transport == "http"  # mcp ships with the MCP console milestone
+    assert settings.ch.transport == "mcp"  # official mcp-clickhouse is the runtime default
     assert settings.generator.rows == 50_000_000
     assert settings.generator.seed == 20260826
     assert settings.generator.load is True

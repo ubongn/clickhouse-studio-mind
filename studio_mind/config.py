@@ -57,10 +57,10 @@ class ClickHouseSettings:
     user: str = "default"
     password: str = ""
     database: str = "studio"
-    # "http" runs today via clickhouse-connect; "mcp" (official mcp-clickhouse
-    # server) is wired for the MCP console milestone — selecting it before that
-    # lands gives a clear error instead of a silent fallback.
-    transport: str = "http"
+    # "mcp" is the runtime default: every analytics query goes through the
+    # official mcp-clickhouse server (github.com/ClickHouse/mcp-clickhouse).
+    # "http" is the dev fallback (direct clickhouse-connect, no MCP layer).
+    transport: str = "mcp"
 
     @property
     def is_secure(self) -> bool:
@@ -126,7 +126,7 @@ def load_settings(env_file: str | Path | None = ".env") -> Settings:
             user=os.getenv("CLICKHOUSE_USER", "default"),
             password=os.getenv("CLICKHOUSE_PASSWORD", ""),
             database=os.getenv("CLICKHOUSE_DATABASE", "studio"),
-            transport=os.getenv("STUDIO_MIND_TRANSPORT", "http"),
+            transport=os.getenv("STUDIO_MIND_TRANSPORT", "mcp"),
         ),
         generator=GeneratorSettings(
             rows=_int(os.getenv("GENERATOR_ROWS"), 50_000_000),
