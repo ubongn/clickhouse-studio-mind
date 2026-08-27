@@ -3,7 +3,8 @@
 [![CI](https://github.com/ubongn/clickhouse-studio-mind/actions/workflows/ci.yml/badge.svg)](https://github.com/ubongn/clickhouse-studio-mind/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
 
-> **Hosted URL (live demo): <!-- HOSTED_URL --> <https://studio-mind-ubongns-projects.vercel.app>**
+> **Hosted URL (live demo): <!-- HOSTED_URL --> <https://clickhouse-studio-mind.vercel.app>**
+> *(the longer `studio-mind-ubongns-projects.vercel.app` URL is an alias of the same deployment)*
 > **Open in any browser — no login required.**
 
 **Judges start here (60 seconds):**
@@ -218,7 +219,7 @@ python deploy/deploy.py --region europe-west6     # build + deploy + public URL
 - [x] Web console with clickable evidence, light theme — `python -m studio_mind.server`
 - [x] One-command Cloud Run deploy (pure REST, no gcloud CLI) — `deploy/deploy.py`
 - [x] Serverless Vercel deploy (Hobby plan) — `api/index.py` + `vercel.json`
-- [x] Live hosted URL — `https://studio-mind-ubongns-projects.vercel.app`
+- [x] Live hosted URL — `https://clickhouse-studio-mind.vercel.app` (alias: `studio-mind-ubongns-projects.vercel.app`)
 - [ ] MCP server (ask Studio Mind from any MCP client)
 
 ## License

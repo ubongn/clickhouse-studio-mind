@@ -3,14 +3,15 @@
 Target: a screen-recording of the live hosted demo, ≤ 3:00 per hackathon rules.
 Everything below assumes the public URL:
 
-> **https://studio-mind-ubongns-projects.vercel.app** — no login required.
+> **https://clickhouse-studio-mind.vercel.app** — no login required.
+> (`studio-mind-ubongns-projects.vercel.app` is an alias of the same deployment.)
 
 ---
 
 ## Pre-roll checklist (do these 30-60 min BEFORE recording)
 
 1. **URL health (deep):**
-   `curl "https://studio-mind-ubongns-projects.vercel.app/health?deep=1"`
+   `curl "https://clickhouse-studio-mind.vercel.app/health?deep=1"`
    Expect: `{"status":"ok","transport":"mcp","provider":"vertex","model":"gemini-2.5-flash","clickhouse":{"ok":true,...}}`.
    If `status` is not `ok` or `clickhouse.ok` is false → see Fallbacks below.
 2. **Wake ClickHouse Cloud.** After long idle the service can **cold-resume for up to ~2 min** — the first query just hangs, later ones are fast. Warm it by running the deep health check AND one real `/ask` (the EMEA question) ~30-60 min before recording, then again ~5 min before. Recording should then hit a warm warehouse.
