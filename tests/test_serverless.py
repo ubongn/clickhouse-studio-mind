@@ -106,20 +106,136 @@ def test_llm_vertex_client_uses_env_json(monkeypatch):
     assert captured["credentials"].service_account_email.endswith("@test-project.iam.gserviceaccount.com")
 
 
-def test_api_entry_exposes_asgi_app():
-    """api/index.py (the Vercel function) must export the FastAPI app and be
-    importable from a bare path context."""
+def _load_entry():
+    """Import api/index.py (the Vercel function) from a bare path context."""
     import importlib.util
 
     path = pathlib.Path(__file__).resolve().parent.parent / "api" / "index.py"
     spec = importlib.util.spec_from_file_location("vercel_index", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    return mod
+
+
+def test_api_entry_exposes_asgi_app():
+    """api/index.py (the Vercel function) must export an ASGI callable
+    wrapping the FastAPI app (whose import path is unchanged)."""
     from fastapi import FastAPI
 
-    assert isinstance(mod.app, FastAPI)
-    routes = {r.path for r in mod.app.routes}
+    mod = _load_entry()
+    assert callable(mod.app)
+    fastapi_app = getattr(mod.app, "app", mod.app)
+    assert isinstance(fastapi_app, FastAPI)
+    routes = {r.path for r in fastapi_app.routes}
     assert {"/", "/health", "/ask", "/examples"} <= routes
+
+
+# --- Vercel rewrite-path middleware (__vc_path) ----------------------------
+# New Vercel build pipeline (CLI 59.x / UI-import) hands the app the rewritten
+# destination path (/api/index) for every request; vercel.json forwards the
+# client's original path as ?__vc_path=... and the entry's middleware restores
+# it. These tests simulate both pipeline shapes, fully offline.
+
+
+def _http_scope(path, query_string=b""):
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode("utf-8"),
+        "query_string": query_string,
+        "root_path": "",
+        "headers": [(b"host", b"testserver")],
+        "client": ("testclient", 50000),
+        "server": ("testserver", 80),
+    }
+
+
+def _drive(asgi_app, scope):
+    """Run one request through an ASGI app; return (status, headers, body)."""
+    import asyncio
+
+    messages = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        messages.append(message)
+
+    asyncio.run(asgi_app(scope, receive, send))
+    start = next(m for m in messages if m["type"] == "http.response.start")
+    status = start["status"]
+    headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in start["headers"]}
+    body = b"".join(
+        m.get("body", b"") for m in messages if m["type"] == "http.response.body"
+    )
+    return status, headers, body
+
+
+def test_middleware_restores_path_and_strips_marker():
+    """http scope with ?__vc_path=/health -> app sees /health, marker gone,
+    other query params kept, and the caller's scope dict is not mutated."""
+    mod = _load_entry()
+    seen = {}
+
+    async def spy(scope, receive, send):
+        seen.update(scope)
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    wrapper = mod.VercelRewritePathASGI(spy)
+    scope = _http_scope("/api/index", b"__vc_path=/health&deep=1")
+    _drive(wrapper, scope)
+    assert seen["path"] == "/health"
+    assert seen["raw_path"] == b"/health"
+    assert seen["query_string"] == b"deep=1"
+    assert scope["path"] == "/api/index"  # original scope untouched
+    assert scope["query_string"] == b"__vc_path=/health&deep=1"
+
+
+def test_middleware_new_pipeline_health_reaches_route():
+    """New-pipeline shape: request /api/index?__vc_path=/health -> 200 health
+    JSON (shallow, offline), not FastAPI's 404."""
+    mod = _load_entry()
+    status, headers, body = _drive(
+        mod.app, _http_scope("/api/index", b"__vc_path=/health")
+    )
+    assert status == 200
+    out = json.loads(body)
+    assert out["status"] == "ok"
+    assert out["service"] == "studio-mind"
+
+
+def test_middleware_new_pipeline_root_and_examples():
+    """Blank marker (client asked for /) maps to the root page; /examples
+    routes too."""
+    mod = _load_entry()
+    status, headers, body = _drive(
+        mod.app, _http_scope("/api/index", b"__vc_path=")
+    )
+    assert status == 200
+    assert "text/html" in headers["content-type"]
+
+    status, _, body = _drive(
+        mod.app, _http_scope("/api/index", b"__vc_path=/examples")
+    )
+    assert status == 200
+    assert isinstance(json.loads(body), (list, dict))
+
+
+def test_middleware_old_pipeline_passthrough():
+    """No marker (old pipeline / uvicorn / Cloud Run): scope untouched."""
+    mod = _load_entry()
+    status, _, body = _drive(mod.app, _http_scope("/health"))
+    assert status == 200
+    assert json.loads(body)["status"] == "ok"
+
+    status, _, _ = _drive(mod.app, _http_scope("/api/index"))
+    assert status == 404  # genuinely unknown path stays 404
 
 
 def test_serverless_flag_detected_from_env(monkeypatch):
