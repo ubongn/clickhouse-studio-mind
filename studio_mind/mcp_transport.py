@@ -49,6 +49,16 @@ log = logging.getLogger(__name__)
 
 MCP_SERVER_MODULE = "mcp_clickhouse.main"  # official ClickHouse MCP server (stdio)
 
+# Serverless contract (Vercel sets VERCEL=1 in function invocations): every
+# invocation owns its full MCP lifecycle — spawn the official server, answer
+# the request, close it. The persistent-session warm optimization (one
+# subprocess kept alive across many queries) stays REQUEST-scoped there; any
+# future cross-request session cache MUST check this flag and stay off, so
+# the cold path (fresh subprocess per invocation) is always the one that
+# runs. On long-lived hosts (uvicorn, Cloud Run) the flag is False and
+# nothing changes.
+SERVERLESS = bool(os.getenv("VERCEL") or os.getenv("SERVERLESS"))
+
 
 class McpTransportError(RuntimeError):
     pass
@@ -131,6 +141,11 @@ class McpClient:
         self._server_query_timeout = max(120, query_timeout_s + 60)
         self._call_timeout = self._server_query_timeout + 30
         self._server_command = server_command
+        # serverless (Vercel): this client lives for exactly one invocation —
+        # spawn → query → close(); no state may be reused across invocations
+        self.serverless = SERVERLESS
+        if self.serverless:
+            log.info("serverless mode: mcp-clickhouse subprocess per invocation")
         self._loop = _LoopThread()
         self._session = None
         self._tool: str | None = None       # discovered: run_query (official)

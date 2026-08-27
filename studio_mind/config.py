@@ -7,6 +7,7 @@ Defaults match the documented ClickHouse Cloud / localhost shapes so a
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +28,47 @@ def _int(value: str | None, default: int) -> int:
     if value is None or value.strip() == "":
         return default
     return int(value)
+
+
+_VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+
+
+def vertex_credentials():
+    """Google service-account credentials without needing a key file.
+
+    Precedence (adapter for serverless hosts where no secret file can be
+    shipped, Vercel first):
+
+    1. ``GOOGLE_CREDENTIALS_JSON``  — the full service-account JSON as one
+       string (``json.dumps`` of the key file). Used by the Vercel
+       deployment; the value lives only in the platform's env store.
+    2. ``GOOGLE_APPLICATION_CREDENTIALS`` — key-file path (local dev and
+       Cloud Run; same effect as ADC picking the file up itself).
+    3. ``None`` — caller falls back to Application Default Credentials
+       (GCE metadata server, ``gcloud auth application-default``).
+
+    Returns an authenticated ``google.oauth2.service_account.Credentials``
+    or ``None``. Raises ``ValueError`` on a malformed JSON string so a bad
+    env var is loud, not silent.
+    """
+    raw = (os.getenv("GOOGLE_CREDENTIALS_JSON") or "").strip()
+    if raw:
+        from google.oauth2 import service_account
+
+        info = json.loads(raw)
+        return service_account.Credentials.from_service_account_info(
+            info, scopes=[_VERTEX_SCOPE]
+        )
+
+    key_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if key_file and Path(key_file).is_file():
+        from google.oauth2 import service_account
+
+        return service_account.Credentials.from_service_account_file(
+            key_file, scopes=[_VERTEX_SCOPE]
+        )
+
+    return None
 
 
 @dataclass(frozen=True)

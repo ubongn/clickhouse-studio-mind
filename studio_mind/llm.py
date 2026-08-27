@@ -58,12 +58,21 @@ class LLM:
                         "PROVIDER=vertex requires GOOGLE_CLOUD_PROJECT and "
                         "GOOGLE_CLOUD_LOCATION (Google Cloud runtime)"
                     )
-                # Google Cloud runtime path: Vertex AI + ADC
-                self._client = genai.Client(
-                    vertexai=True,
-                    project=self.s.google_cloud_project,
-                    location=self.s.google_cloud_location,
-                )
+                # Google Cloud runtime path: Vertex AI. Credentials come from
+                # config.vertex_credentials() — GOOGLE_CREDENTIALS_JSON (env
+                # string, serverless), a key file, or None → ADC (Cloud Run's
+                # runtime service account, gcloud locally).
+                from .config import vertex_credentials
+
+                creds = vertex_credentials()
+                client_kwargs: dict = {
+                    "vertexai": True,
+                    "project": self.s.google_cloud_project,
+                    "location": self.s.google_cloud_location,
+                }
+                if creds is not None:
+                    client_kwargs["credentials"] = creds
+                self._client = genai.Client(**client_kwargs)
             else:
                 if not self.s.api_key:
                     raise LLMError("GEMINI_API_KEY missing (or set PROVIDER=vertex)")

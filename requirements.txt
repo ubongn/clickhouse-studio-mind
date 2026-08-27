@@ -1,0 +1,12 @@
+# Runtime dependencies for the Vercel deployment (mirrors pyproject.toml
+# [project].dependencies — Vercel's Python builder installs THIS file).
+# All pure-python or manylinux wheels; no source builds.
+clickhouse-connect>=0.8.16
+mcp-clickhouse>=0.4.1
+mcp>=1.9,<2
+google-genai>=1.0.0
+google-auth>=2.0
+numpy>=1.26
+python-dotenv>=1.0
+fastapi>=0.115
+uvicorn>=0.30

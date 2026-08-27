@@ -39,6 +39,10 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+# --- vercel local state (project link) ---
+.vercel/
 # --- local artifacts (not part of the repo) ---
 briefs/
 tmp_*
+.vercel
+.env*.local
