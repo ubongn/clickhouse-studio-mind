@@ -151,6 +151,7 @@ _INDEX_HTML = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ClickHouse Studio Mind</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Crect%20width='24'%20height='24'%20rx='5.5'%20fill='%23f5e14b'/%3E%3Cpath%20fill='%231c2430'%20d='M4%204h7v7H4zM13%204h7v4h-7zM13%2010h7v10h-7zM4%2013h7v7H4z'/%3E%3C/svg%3E">
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.parse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -185,5 +186,23 @@ class TestWaitingUX:
     def test_no_external_assets(self, client):
         h = client[0].get("/").text
         assert "<script src" not in h                   # no CDN JS
-        assert "<link" not in h                          # no external CSS/fonts
-        assert "http://" not in h and "https://" not in h  # fully self-contained
+        # <link> is allowed only as an inline data: URI (the SVG favicon) —
+        # never a fetch from another origin.
+        for attrs in re.findall(r"<link\b([^>]*)>", h):
+            href = re.search(r"href\s*=\s*[\"']([^\"']*)[\"']", attrs)
+            assert href and href.group(1).startswith("data:"), f"external <link>: {attrs}"
+        # fully self-contained: no off-origin URLs outside data: URIs
+        # (the favicon's SVG namespace lives inside its data: URI)
+        stripped = re.sub(r"data:[^\"]*", "", h)
+        assert "http://" not in stripped and "https://" not in stripped
+
+    def test_favicon_inline_svg(self, client):
+        """Tab icon matches the header mark: yellow rounded square + dark glyph."""
+        h = client[0].get("/").text
+        m = re.search(r"<link rel=\"icon\" type=\"image/svg\+xml\" href=\"data:image/svg\+xml,([^\"]+)\"", h)
+        assert m, "inline SVG favicon link missing"
+        icon = m.group(1)
+        assert icon.startswith("%3Csvg") and icon.endswith("%3E")      # URL-encoded SVG
+        assert "%23f5e14b" in icon and "%231c2430" in icon             # brand colors
+        assert "http" in urllib.parse.unquote(icon)                    # xmlns present
+
