@@ -4,7 +4,6 @@ Target: a screen-recording of the live hosted demo, ≤ 3:00 per hackathon rules
 Everything below assumes the public URL:
 
 > **https://clickhouse-studio-mind.vercel.app** — no login required.
-> (`studio-mind-ubongns-projects.vercel.app` is an alias of the same deployment.)
 
 ---
 
