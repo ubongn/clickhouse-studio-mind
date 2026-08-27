@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -118,3 +119,71 @@ class TestPages:
         ex = r.json()["examples"]
         assert len(ex) == 3
         assert all(isinstance(q, str) for q in ex)
+
+
+class TestWaitingUX:
+    """M7-UX: /ask takes 45-90s cold — the judge page must look alive the whole
+    time (spinner, ticking timer, stages, skeleton, cold-start note, timeout
+    guard). Asserted against the served HTML since the logic is inline JS."""
+
+    def test_button_spinner_and_label_swap(self, client):
+        h = client[0].get("/").text
+        assert 'id="btn-label"' in h                     # label element exists
+        assert "'Thinking…'" in h                        # busy label, restored to 'Ask'
+        assert "#btn .spin" in h and "@keyframes btnspin" in h
+        assert "border-top-color:#f5e14b" in h           # spinner wears the brand color
+        assert "btn.disabled = on" in h                  # disabled while busy, restored after
+
+    def test_live_elapsed_timer(self, client):
+        h = client[0].get("/").text
+        assert "setInterval(step, 1000)" in h            # 1s tick
+        assert 'id="st-sec"' in h                        # "Thinking… Ns" target element
+        assert "performance.now() - t0" in h
+
+    def test_stage_progression_copy_and_thresholds(self, client):
+        h = client[0].get("/").text
+        for s in ("Parsing your question", "Querying ClickHouse via official MCP server",
+                  "Diagnosing audience patterns", "Writing your brief with SQL receipts"):
+            assert s in h
+        m = re.search(r"const STAGES = \[(.*?)\];", h, re.DOTALL)
+        assert m, "STAGES table not found"
+        for t in ("[0,", "[3,", "[10,", "[25,"):      # 0-3 / 3-10 / 10-25 / 25+ seconds
+            assert t in m.group(1)
+        assert "function stageFor" in h and "s >= t" in h
+
+    def test_skeleton_answer_card(self, client):
+        h = client[0].get("/").text
+        assert "function skeleton" in h
+        assert "sk-line" in h and "sk-pill" in h
+        assert "@keyframes shimmer" in h                # shimmer animation
+        assert 'aria-hidden="true"' in h                # skeleton is not announced
+
+    def test_cold_start_expectation_note(self, client):
+        h = client[0].get("/").text
+        assert "const COLD_AT = 60" in h
+        assert "ClickHouse Cloud cold resume" in h
+        assert "Hang tight" in h
+
+    def test_client_timeout_guard(self, client):
+        h = client[0].get("/").text
+        assert "FETCH_TIMEOUT_MS = 240000" in h         # ~240s give-up guard
+        assert "AbortController" in h and "AbortError" in h
+        assert "ctl.abort()" in h
+
+    def test_completion_elapsed_pill_and_aria(self, client):
+        h = client[0].get("/").text
+        assert "Answered in " in h                      # statusline + sr announcement
+        assert "pill-hot" in h and "<b>answered</b> in " in h   # elapsed pill in meta row
+        assert 'id="main"' in h and "aria-busy" in h    # aria-busy on the main region
+        assert 'aria-live="polite"' in h                # stage/result announcements
+
+    def test_error_path_is_friendly(self, client):
+        h = client[0].get("/").text
+        assert "Something went wrong" in h
+        assert "press Ask to retry" in h
+
+    def test_no_external_assets(self, client):
+        h = client[0].get("/").text
+        assert "<script src" not in h                   # no CDN JS
+        assert "<link" not in h                          # no external CSS/fonts
+        assert "http://" not in h and "https://" not in h  # fully self-contained

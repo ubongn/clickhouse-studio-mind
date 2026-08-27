@@ -171,11 +171,42 @@ _INDEX_HTML = """<!doctype html>
                    border-radius:10px; background:#1c2430; color:#fff; cursor:pointer;
                    display:flex; align-items:center; gap:8px; }
   .askbar button:disabled { opacity:.5; cursor:default; }
+  #btn .spin { display:none; width:15px; height:15px; border-radius:50%;
+               border:2px solid rgba(255,255,255,.3); border-top-color:#f5e14b;
+               animation:btnspin .8s linear infinite; }
+  #btn.busy .spin { display:inline-block; }
+  #btn.busy svg { display:none; }
+  @keyframes btnspin { to { transform:rotate(360deg); } }
   .chips { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; }
   .chip { font-size:13px; color:#37455a; background:#fff; border:1px solid #dbe1ea;
           padding:6px 12px; border-radius:999px; cursor:pointer; }
   .chip:hover { border-color:#f5e14b; }
   .statusline { margin-top:14px; font-size:13px; color:#5b6675; min-height:18px; }
+  .statusline.busy { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px;
+                     min-height:22px; }
+  .statusline .pulse { width:9px; height:9px; border-radius:50%; background:#f5e14b;
+                       animation:pulse 1.6s ease-out infinite; flex:0 0 auto; }
+  @keyframes pulse { 70% { box-shadow:0 0 0 9px rgba(245,225,75,0); }
+                     100% { box-shadow:0 0 0 0 rgba(245,225,75,0); } }
+  .statusline .st-timer { font-weight:600; color:#1c2430; font-size:14px;
+                          font-variant-numeric:tabular-nums; }
+  .statusline .st-cold { flex-basis:100%; color:#8a5a00; font-size:12.5px; }
+  .sk { border-radius:6px;
+        background:linear-gradient(90deg,#eef1f6 25%,#e6ebf2 37%,#eef1f6 63%);
+        background-size:400% 100%; animation:shimmer 1.3s ease infinite; }
+  @keyframes shimmer { 0% { background-position:100% 0; } 100% { background-position:-100% 0; } }
+  .sk-h { height:12px; width:150px; margin-bottom:20px; }
+  .sk-pill { height:22px; width:92px; border-radius:999px; display:inline-block;
+             margin:0 8px 18px 0; }
+  .sk-line { height:13px; margin:9px 0; }
+  .w100 { width:100%; } .w95 { width:95%; } .w88 { width:88%; }
+  .w70 { width:70%; } .w52 { width:52%; }
+  .pill-hot { background:#fbf3c6; color:#6b5c00; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+             overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+  @media (prefers-reduced-motion: reduce) {
+    .spin, .statusline .pulse, .sk { animation:none; }
+  }
   .card { background:#fff; border:1px solid #e4e8ee; border-radius:12px; padding:22px 24px;
           margin-top:20px; }
   .card h2 { font-size:14px; text-transform:uppercase; letter-spacing:.8px;
@@ -215,25 +246,43 @@ _INDEX_HTML = """<!doctype html>
     <div class="sub">Evidence-cited decision briefs over ClickHouse — official mcp-clickhouse runtime, Gemini via Vertex AI</div>
   </div>
 </header>
-<main>
+<main id="main">
   <form class="askbar" id="f" onsubmit="return go(event)">
     <input id="q" placeholder="Ask a studio-exec question, e.g. Which genres keep viewers past episode 3 in EMEA?" autofocus>
     <button id="btn" type="submit">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg id="btn-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <circle cx="11" cy="11" r="6.5" stroke="#fff" stroke-width="2"/>
         <path d="M16 16l5 5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
       </svg>
-      Ask
+      <span class="spin" aria-hidden="true"></span>
+      <span id="btn-label">Ask</span>
     </button>
   </form>
   <div class="chips" id="chips"></div>
   <div class="statusline" id="status"></div>
   <div id="out"></div>
+  <div id="sr" class="sr-only" role="status" aria-live="polite"></div>
 </main>
 <footer>Read-only by construction (sqlguard + server-side readonly). Every number cites its query.</footer>
 <script>
 const out = document.getElementById('out'), status = document.getElementById('status');
 const chips = document.getElementById('chips'), btn = document.getElementById('btn');
+const mainEl = document.getElementById('main'), sr = document.getElementById('sr');
+
+// Waiting-UX knobs — /ask takes 45-90s cold, so the page must narrate progress:
+// a ticking timer (liveness), honest pipeline stages (the value story), a
+// skeleton answer card (no layout jump), a cold-start expectation at 60s, and
+// a client-side give-up guard so a wedged request never hangs the judge.
+const STAGES = [
+  [0,  'Parsing your question…'],
+  [3,  'Querying ClickHouse via official MCP server…'],
+  [10, 'Diagnosing audience patterns…'],
+  [25, 'Writing your brief with SQL receipts…']
+];
+const COLD_AT = 60;                    // seconds in, show the cold-start note
+const COLD_NOTE = 'First question after idle can take ~2 min (ClickHouse Cloud cold resume). Hang tight.';
+const FETCH_TIMEOUT_MS = 240000;       // ~240s client-side timeout guard
+let tick = null;
 
 fetch('/examples').then(r => r.json()).then(d => {
   d.examples.forEach(q => {
@@ -246,28 +295,99 @@ fetch('/examples').then(r => r.json()).then(d => {
 
 function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+function stageFor(s){
+  let label = STAGES[0][1];
+  for(const [t, l] of STAGES) if(s >= t) label = l;
+  return label;
+}
+
+function skeleton(){
+  return '<div class="card" aria-hidden="true">' +
+    '<div class="sk sk-h"></div>' +
+    '<span class="sk sk-pill"></span>'.repeat(3) +
+    '<div class="sk sk-line w100"></div><div class="sk sk-line w95"></div>' +
+    '<div class="sk sk-line w88"></div><div class="sk sk-line w95"></div>' +
+    '<div class="sk sk-line w70"></div><div class="sk sk-line w52"></div></div>';
+}
+
+function setBusy(on){
+  btn.disabled = on;
+  btn.classList.toggle('busy', on);
+  document.getElementById('btn-label').textContent = on ? 'Thinking…' : 'Ask';
+  mainEl.setAttribute('aria-busy', on ? 'true' : 'false');
+  if(on){
+    status.className = 'statusline busy';
+    status.innerHTML = '<span class="pulse" aria-hidden="true"></span>' +
+      '<span class="st-timer" aria-hidden="true">Thinking… <span id="st-sec">0</span>s</span>' +
+      '<span class="st-stage" id="st-stage">' + STAGES[0][1] + '</span>' +
+      '<span class="st-cold" id="st-cold" hidden>' + esc(COLD_NOTE) + '</span>';
+    out.innerHTML = skeleton();
+  }
+}
+
+function startTimer(t0){
+  stopTimer();
+  let shown = '';
+  const step = () => {
+    const s = Math.floor((performance.now() - t0) / 1000);
+    const sec = document.getElementById('st-sec');
+    if(sec) sec.textContent = s;
+    const stage = stageFor(s);
+    if(stage !== shown){
+      shown = stage;
+      const el = document.getElementById('st-stage');
+      if(el) el.textContent = stage;
+      sr.textContent = stage;           // announce stage changes only, not every tick
+    }
+    if(s >= COLD_AT){
+      const c = document.getElementById('st-cold');
+      if(c) c.hidden = false;
+    }
+  };
+  step();
+  tick = setInterval(step, 1000);
+}
+
+function stopTimer(){ if(tick){ clearInterval(tick); tick = null; } }
+
 async function go(ev){
   ev.preventDefault();
   const q = document.getElementById('q').value.trim();
-  if(!q) return false;
-  btn.disabled = true; status.textContent = 'Running the pipeline: parse, query via mcp-clickhouse, diagnose, recommend, brief...';
-  out.innerHTML = '';
+  if(!q || btn.disabled) return false;
+  setBusy(true);
   const t0 = performance.now();
+  startTimer(t0);
+  const ctl = new AbortController();
+  const guard = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
   try {
     const r = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json'},
-                                   body: JSON.stringify({question: q})});
+                                   body: JSON.stringify({question: q}), signal: ctl.signal});
+    clearTimeout(guard);
     const d = await r.json();
     if(!r.ok) throw new Error(d.detail || r.statusText);
-    status.textContent = 'Answered in ' + ((performance.now()-t0)/1000).toFixed(1) + 's (client wall clock).';
-    render(d);
+    const secs = Math.max(1, Math.round((performance.now() - t0) / 1000));
+    status.className = 'statusline';
+    status.textContent = 'Answered in ' + secs + 's.';
+    sr.textContent = 'Answered in ' + secs + 's.';
+    render(d, secs);
   } catch(e) {
-    status.textContent = '';
-    out.innerHTML = '<div class="card"><div class="err">Request failed: ' + esc(e.message) + '</div></div>';
-  } finally { btn.disabled = false; }
+    clearTimeout(guard);
+    const msg = e.name === 'AbortError'
+      ? 'Gave up after ' + Math.round(FETCH_TIMEOUT_MS / 1000) + 's — the pipeline seems stuck (usually a cold warehouse or a wedged model call). Please Ask again.'
+      : 'Request failed: ' + e.message;
+    status.className = 'statusline'; status.textContent = '';
+    sr.textContent = 'The request failed. ' + msg;
+    out.innerHTML = '<div class="card"><h2>Something went wrong</h2>' +
+      '<div class="err">' + esc(msg) + '</div>' +
+      '<div style="margin-top:10px;font-size:13px;color:#5b6675">Your question is still in the box above — press Ask to retry.</div></div>';
+  } finally {
+    stopTimer();
+    setBusy(false);
+  }
   return false;
 }
 
-function render(d){
+function render(d, secs){
   const ms = Object.entries(d.timings || {}).map(([k,v]) =>
       '<span class="pill"><b>' + esc(k.replace('_ms','')) + '</b> ' + Number(v).toFixed(0) + ' ms</span>').join('');
   let ev = (d.evidence || []).map(e =>
@@ -280,7 +400,7 @@ function render(d){
     + '</div>').join('');
   out.innerHTML =
     '<div class="card"><h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 3h12v18l-6-4-6 4z" stroke="#5b6675" stroke-width="1.8" stroke-linejoin="round"/></svg>Decision brief</h2>' +
-    '<div class="meta">' + ms + '<span class="pill"><b>model</b> ' + esc(d.model) + ' · ' + esc(d.provider) + '</span>' +
+    '<div class="meta">' + (secs ? '<span class="pill pill-hot"><b>answered</b> in ' + secs + 's</span>' : '') + ms + '<span class="pill"><b>model</b> ' + esc(d.model) + ' · ' + esc(d.provider) + '</span>' +
     '<span class="pill"><b>transport</b> ' + esc(d.transport) + '</span></div>' +
     '<div class="brief">' + esc(d.brief) + '</div></div>' +
     (ev ? '<div class="card"><h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 5h9M9 12h9M9 19h9M4 5h.01M4 12h.01M4 19h.01" stroke="#5b6675" stroke-width="2" stroke-linecap="round"/></svg>Evidence — every number cites its query</h2>' + ev + '</div>' : '') +
