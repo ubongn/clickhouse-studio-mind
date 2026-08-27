@@ -1,6 +1,6 @@
 # ClickHouse Studio Mind
 
-**Hosted URL (live demo):** <!-- HOSTED_URL --> `https://studio-mind.<project-id>.a.run.app` — one-question demo, no login; verification transcript: [docs/live-transcript-2026-08-26.md](docs/live-transcript-2026-08-26.md) · deploy/reproduce: `python deploy/deploy.py --region europe-west6`
+**Hosted URL (live demo):** <!-- HOSTED_URL --> `https://studio.sabiedu.online` — one-question demo, no login; verification transcript: [docs/live-transcript-2026-08-26.md](docs/live-transcript-2026-08-26.md) · self-hosted via Cloudflare Tunnel; runtime: official mcp-clickhouse → ClickHouse Cloud, Gemini via Vertex AI. (Cloud Run deploy files kept in [`deploy/`](deploy/) as a future option — the live URL above is the tunnel.)
 
 **An analytics agent for studio executives, built ClickHouse-native.**
 Ask a plain-English question about audience behavior → get a one-page decision brief where **every single number cites the exact SQL that produced it**.
@@ -27,13 +27,17 @@ That is the whole point: an agent with zero hallucination surface.
 
 ## Live demo
 
-The service runs on **Google Cloud Run** (Dockerfile in repo root, manifest in
-[`deploy/service.yaml`](deploy/service.yaml)): unauthenticated HTTP in, one
-container kept warm, and the full compliant runtime path on every question —
-the HTTP service (`studio_mind/server.py`) drives the pipeline, every warehouse
-query goes through the **official `mcp-clickhouse` server**, and every model
-call goes to **Gemini 2.5 Flash via Vertex AI** with Application Default
-Credentials (runtime service account — no API keys in the container).
+The service is **self-hosted via Cloudflare Tunnel** (`studio.sabiedu.online` →
+`cloudflared` → `uvicorn` FastAPI on the origin box; launcher:
+[`deploy/serve-tunnel.cmd`](deploy/serve-tunnel.cmd), bound to `127.0.0.1:8100`).
+Every question runs the full compliant runtime path — the HTTP service
+(`studio_mind/server.py`) drives the pipeline, every warehouse query goes through
+the **official `mcp-clickhouse` server**, and every model call goes to
+**Gemini 2.5 Flash via Vertex AI** with a service-account key
+(`GOOGLE_APPLICATION_CREDENTIALS`) — no API keys at runtime.
+The same container is also packaged for **Google Cloud Run**
+(Dockerfile in repo root, manifest in [`deploy/service.yaml`](deploy/service.yaml),
+one-command deploy) — kept as a future hosting option; the live URL is the tunnel.
 
 ```bash
 # health (liveness + config; add ?deep=1 to SELECT 1 through mcp-clickhouse)
@@ -51,12 +55,13 @@ curl -s -X POST "$URL/ask" -H 'Content-Type: application/json' \
 # evidence table, and the stage trace render.
 ```
 
-A captured transcript of this exact flow (local server, container-identical
-runtime path, verified 2026-08-26) is committed at
+A captured transcript of this exact flow (container-identical runtime path,
+verified 2026-08-26) is committed at
 [docs/live-transcript-2026-08-26.md](docs/live-transcript-2026-08-26.md).
 
-**Reproduce the deployment** (no gcloud CLI needed — pure REST with a
-service-account key):
+**Future option — Google Cloud Run** (the live URL is the self-hosted tunnel
+above; same image, same runtime path): reproduce the deployment with pure REST,
+no gcloud CLI:
 
 ```bash
 cp .env.example .env          # fill CLICKHOUSE_PASSWORD (trial creds)
@@ -67,16 +72,19 @@ python deploy/deploy.py --region europe-west6
 ```
 
 Run the same service locally: `python -m studio_mind.server` →
-`http://localhost:8080`.
+`http://localhost:8080`; or exactly as the live tunnel serves it:
+`deploy\serve-tunnel.cmd` → `http://127.0.0.1:8100`.
 
 The stack, end to end:
 
 ```text
- browser / curl ──HTTPS──▶ Cloud Run  (FastAPI — studio_mind/server.py)
-                               │   deterministic five-stage pipeline (Python)
-                               ├──▶ official mcp-clickhouse server   [stdio subprocess]
-                               │         └──▶ ClickHouse Cloud       [HTTP, read-only]
-                               └──▶ Gemini 2.5 Flash via Vertex AI   [ADC, no API keys]
+ browser / curl ──HTTPS──▶ Cloudflare Tunnel (studio.sabiedu.online)
+                               └──▶ cloudflared ──▶ uvicorn FastAPI 127.0.0.1:8100
+                                        (studio_mind/server.py)
+                                        │  deterministic five-stage pipeline (Python)
+                                        ├──▶ official mcp-clickhouse server   [stdio subprocess]
+                                        │         └──▶ ClickHouse Cloud       [HTTP, read-only]
+                                        └──▶ Gemini 2.5 Flash via Vertex AI   [service-account key]
 ```
 
 ---
@@ -195,6 +203,7 @@ python deploy/deploy.py --region europe-west6     # build + deploy + public URL
 - [x] CLI with evidence inspection
 - [x] Web console with clickable evidence, light theme — `python -m studio_mind.server`
 - [x] One-command Cloud Run deploy (pure REST, no gcloud CLI) — `deploy/deploy.py`
+- [x] Live hosted URL — `https://studio.sabiedu.online` (Cloudflare Tunnel → `deploy/serve-tunnel.cmd`)
 - [ ] MCP server (ask Studio Mind from any MCP client)
 
 ## License
