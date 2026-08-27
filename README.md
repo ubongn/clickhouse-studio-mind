@@ -1,6 +1,17 @@
 # ClickHouse Studio Mind
 
-**Hosted URL (live demo):** <!-- HOSTED_URL --> `https://studio-mind-ubongns-projects.vercel.app` — one-question demo, no login; verification transcript: [docs/live-transcript-2026-08-26.md](docs/live-transcript-2026-08-26.md) · serverless on Vercel (Hobby plan, fluid compute); runtime: official mcp-clickhouse → ClickHouse Cloud, Gemini via Vertex AI. (Google Cloud Run deploy files kept in [`deploy/`](deploy/) as an alternative host.)
+[![CI](https://github.com/ubongn/clickhouse-studio-mind/actions/workflows/ci.yml/badge.svg)](https://github.com/ubongn/clickhouse-studio-mind/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
+
+> **Hosted URL (live demo): <!-- HOSTED_URL --> <https://studio-mind-ubongns-projects.vercel.app>**
+> **Open in any browser — no login required.**
+
+**Judges start here (60 seconds):**
+1. Open the URL above, type or paste `Which genres keep viewers past episode 3 in EMEA?`, press **Ask**.
+2. Watch the one-page brief render — every `[Qn]` opens its SQL receipt: exact query, plan, and result rows.
+3. Check the stage trace below the brief for per-stage timings (parse → query → diagnose → recommend → brief); the full answer takes ~40-60s.
+
+Live verification transcript: [docs/live-transcript-2026-08-26.md](docs/live-transcript-2026-08-26.md) · serverless on Vercel (Hobby plan, fluid compute); runtime: official mcp-clickhouse → ClickHouse Cloud, Gemini via Vertex AI. (Google Cloud Run deploy files kept in [`deploy/`](deploy/) as an alternative host.)
 
 **An analytics agent for studio executives, built ClickHouse-native.**
 Ask a plain-English question about audience behavior → get a one-page decision brief where **every single number cites the exact SQL that produced it**.
