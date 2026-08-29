@@ -206,3 +206,105 @@ class TestWaitingUX:
         assert "%23f5e14b" in icon and "%231c2430" in icon             # brand colors
         assert "http" in urllib.parse.unquote(icon)                    # xmlns present
 
+
+class TestMorning:
+    """/morning — the proactive 7am brief, same trust machinery as /ask."""
+
+    @staticmethod
+    def _fake_morning(client_obj, registry, database, date=None):
+        from studio_mind.morning import MorningResult
+
+        registry.add(purpose="daily metrics (9-day series)",
+                     sql=f"SELECT toDate(event_time) AS day FROM {database}.viewing_events",
+                     columns=["day", "events"], rows=[["2026-05-21", 44900]],
+                     elapsed_ms=180.0, read_rows=50_000_000,
+                     read_size="180.00 MiB", server_ms=245.0)
+        return MorningResult(
+            date=date or "2026-05-21",
+            metrics=[{"key": "rebuffer_per_event", "label": "Rebuffer s/event",
+                      "good": "lower", "value": 2.1, "baseline": 0.224,
+                      "delta": 1.876, "pct": 836.6, "z": 15.3}],
+            watchlist=[{"level": "high", "metric": "Rebuffer s/event", "z": 15.3,
+                        "pct": 836.6,
+                        "detail": "Rebuffer s/event 2.1 vs baseline 0.224 (+836.6%, z=+15.30)"}],
+            attribution=[{"device": "mobile", "region": "NA",
+                          "rebuffer_per_event": 5.9, "events": 12400,
+                          "detail": "NA · mobile: 5.90s rebuffer/event over 12,400 events"}],
+            churn={"today": 214, "baseline_per_day": 96.0},
+            brief_md="# Morning Brief — 2026-05-21 · Nimbus+ Studio Ops\n\nship it",
+            registry=registry,
+        )
+
+    def test_morning_endpoint_shape(self, client, monkeypatch):
+        c, _ = client
+        monkeypatch.setattr(server, "build_morning", self._fake_morning)
+        monkeypatch.setattr("studio_mind.ch.get_client", lambda s=None: object())
+        monkeypatch.setattr("studio_mind.ch.close_client", lambda c: None)
+        r = c.get("/morning")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["date"] == "2026-05-21"
+        assert body["watchlist"][0]["metric"] == "Rebuffer s/event"
+        assert body["evidence"][0]["read_rows"] == 50_000_000
+        assert "total_ms" in body["timings"]
+        assert "morning" in body["trace_tree"].lower() or "TRACE" in body["trace_tree"]
+
+    def test_morning_bad_date_is_422(self, client, monkeypatch):
+        c, _ = client
+        monkeypatch.setattr("studio_mind.ch.get_client", lambda s=None: object())
+        monkeypatch.setattr("studio_mind.ch.close_client", lambda c: None)
+
+        def boom(*a, **k):
+            raise ValueError("date must be YYYY-MM-DD")
+
+        monkeypatch.setattr(server, "build_morning", boom)
+        r = c.get("/morning", params={"date": "yesterday"})
+        assert r.status_code == 422
+        assert "YYYY-MM-DD" in r.json()["detail"]
+
+    def test_morning_pinned_date_passes_through(self, client, monkeypatch):
+        c, _ = client
+        monkeypatch.setattr("studio_mind.ch.get_client", lambda s=None: object())
+        monkeypatch.setattr("studio_mind.ch.close_client", lambda c: None)
+        seen = {}
+
+        def fake(client_obj, registry, database, date=None):
+            seen["date"] = date
+            return self._fake_morning(client_obj, registry, database, date)
+
+        monkeypatch.setattr(server, "build_morning", fake)
+        r = c.get("/morning", params={"date": "2026-05-21"})
+        assert r.status_code == 200
+        assert seen["date"] == "2026-05-21"
+        assert r.json()["date"] == "2026-05-21"
+
+
+class TestMorningUX:
+    """Page affordance: the morning-brief chip, renderer, and trust pill."""
+
+    def test_morning_chip_on_page(self, client):
+        h = client[0].get("/").text
+        assert 'id="mbtn"' in h and "morningBrief()" in h
+        assert "what changed overnight" in h
+        assert "chip-am" in h                                   # dashed = secondary action
+
+    def test_morning_renderer_and_status_copy(self, client):
+        h = client[0].get("/").text
+        assert "function renderMorning" in h
+        assert "Morning brief ready in " in h
+        assert "3 SQL receipts via the official MCP server" in h
+        assert "MORNING_TIMEOUT_MS = 120000" in h               # shorter guard than /ask
+
+    def test_trust_pill_on_every_evidence_card(self, client):
+        h = client[0].get("/").text
+        assert "function trustPill" in h
+        assert "rows scanned" in h                              # scan receipt copy
+        assert "ms wall" in h and "ms server" in h
+        # both renderers apply it (the def itself doesn't count)
+        assert h.count("+ trustPill(e)") == 2
+
+    def test_watchlist_badges_render(self, client):
+        h = client[0].get("/").text
+        assert "Watchlist" in h
+        assert "pill-hot" in h and "z " in h
+

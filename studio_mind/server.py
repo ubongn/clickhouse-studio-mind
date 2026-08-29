@@ -26,12 +26,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from .config import get_settings
+from .morning import build_morning
 from .pipeline.run import run_pipeline
 
 log = logging.getLogger("studio_mind.server")
@@ -125,6 +127,52 @@ def create_app() -> FastAPI:
     def ask_get(q: str = Query(..., min_length=1), use_llm: bool = True):
         return ask(AskBody(question=q, use_llm=use_llm))
 
+    @app.get("/morning", response_class=JSONResponse)
+    def morning(date: str | None = Query(default=None)):
+        """Proactive 7am brief — what changed overnight. No question needed.
+
+        Same trust machinery as /ask: three SQL receipts through the official
+        mcp-clickhouse transport, each carrying latency + rows-scanned.
+        """
+        from . import ch, tracing
+        from .evidence import EvidenceRegistry
+
+        s = get_settings()
+        registry = EvidenceRegistry()
+        collector = tracing.TraceCollector(
+            f"morning · {date or 'latest'}",
+            metadata={"transport": s.ch.transport, "database": s.ch.database})
+        token = tracing.set_active_collector(collector)
+        client = ch.get_client(s)
+        t0 = time.perf_counter()
+        try:
+            with collector.span("morning brief"):
+                r = build_morning(client, registry, s.ch.database, date)
+            try:
+                evidence = json.loads(registry.to_json())
+            except Exception:
+                evidence = []
+            return JSONResponse({
+                "date": r.date,
+                "metrics": r.metrics,
+                "watchlist": r.watchlist,
+                "attribution": r.attribution,
+                "churn": r.churn,
+                "brief_md": r.brief_md,
+                "evidence": evidence,
+                "trace_tree": collector.tree(),
+                "timings": {"total_ms": round((time.perf_counter() - t0) * 1000, 1)},
+                "transport": s.ch.transport,
+            })
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        except Exception as e:
+            log.exception("morning brief failed")
+            raise HTTPException(status_code=502, detail=f"morning error: {e}") from e
+        finally:
+            tracing.reset_active_collector(token)
+            ch.close_client(client)
+
     @app.get("/", response_class=HTMLResponse)
     def index():
         return _INDEX_HTML
@@ -179,6 +227,8 @@ _INDEX_HTML = """<!doctype html>
   #btn.busy svg { display:none; }
   @keyframes btnspin { to { transform:rotate(360deg); } }
   .chips { margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; }
+  .morningrow { margin-top:10px; }
+  .chip-am { border-style:dashed; }
   .chip { font-size:13px; color:#37455a; background:#fff; border:1px solid #dbe1ea;
           padding:6px 12px; border-radius:999px; cursor:pointer; }
   .chip:hover { border-color:#f5e14b; }
@@ -260,6 +310,11 @@ _INDEX_HTML = """<!doctype html>
     </button>
   </form>
   <div class="chips" id="chips"></div>
+  <div class="morningrow">
+    <button class="chip chip-am" id="mbtn" type="button" onclick="morningBrief()">
+      No question yet? See the morning brief — what changed overnight
+    </button>
+  </div>
   <div class="statusline" id="status"></div>
   <div id="out"></div>
   <div id="sr" class="sr-only" role="status" aria-live="polite"></div>
@@ -388,11 +443,21 @@ async function go(ev){
   return false;
 }
 
+// trust panel pill: scan receipt under every SQL receipt
+function trustPill(e){
+  const bits = [];
+  if(e.elapsed_ms != null) bits.push(Number(e.elapsed_ms).toFixed(0) + ' ms wall');
+  if(e.server_ms != null)  bits.push(Number(e.server_ms).toFixed(0) + ' ms server');
+  if(e.read_rows != null)  bits.push(Number(e.read_rows).toLocaleString() + ' rows scanned');
+  if(e.read_size)          bits.push(e.read_size);
+  return bits.length ? ' <span class="pill"><b>scan</b> ' + esc(bits.join(' · ')) + '</span>' : '';
+}
+
 function render(d, secs){
   const ms = Object.entries(d.timings || {}).map(([k,v]) =>
       '<span class="pill"><b>' + esc(k.replace('_ms','')) + '</b> ' + Number(v).toFixed(0) + ' ms</span>').join('');
   let ev = (d.evidence || []).map(e =>
-    '<div class="ev"><div><span class="id">[' + esc(e.id) + ']</span> ' + esc(e.purpose) + '</div>' +
+    '<div class="ev"><div><span class="id">[' + esc(e.id) + ']</span> ' + esc(e.purpose) + trustPill(e) + '</div>' +
     '<code class="sql">' + esc(e.sql) + '</code>' +
     (e.error ? '<div class="err">' + esc(e.error) + '</div>' :
       '<table><tr>' + (e.columns||[]).map(c=>'<th>'+esc(c)+'</th>').join('') + '</tr>' +
@@ -406,6 +471,68 @@ function render(d, secs){
     '<div class="brief">' + esc(d.brief) + '</div></div>' +
     (ev ? '<div class="card"><h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 5h9M9 12h9M9 19h9M4 5h.01M4 12h.01M4 19h.01" stroke="#5b6675" stroke-width="2" stroke-linecap="round"/></svg>Evidence — every number cites its query</h2>' + ev + '</div>' : '') +
     (d.trace_tree ? '<div class="card"><details><summary>Stage trace (spans)</summary><pre class="tree">' + esc(d.trace_tree) + '</pre></details></div>' : '');
+}
+
+// --- morning brief ----------------------------------------------------------
+// The proactive half: no question, just "what changed overnight" + watchlist.
+// Fast path (3 SQL receipts), so a static statusline beats the stage narrator.
+const MORNING_TIMEOUT_MS = 120000;
+
+function renderMorning(d, secs){
+  const ev = (d.evidence || []).map(e =>
+    '<div class="ev"><div><span class="id">[' + esc(e.id) + ']</span> ' + esc(e.purpose) + trustPill(e) + '</div>' +
+    '<code class="sql">' + esc(e.sql) + '</code>' +
+    (e.error ? '<div class="err">' + esc(e.error) + '</div>' :
+      '<table><tr>' + (e.columns||[]).map(c=>'<th>'+esc(c)+'</th>').join('') + '</tr>' +
+      (e.rows||[]).slice(0,12).map(r=>'<tr>'+r.map(v=>'<td>'+esc(v===null?'NULL':v)+'</td>').join('')+'</tr>').join('') +
+      '</table>')
+    + '</div>').join('');
+  const wl = (d.watchlist || []).map(w =>
+    '<div class="ev"><div><span class="pill pill-hot"><b>' + esc(w.level) + '</b> z ' +
+    Number(w.z).toFixed(1) + '</span> <b>' + esc(w.metric) + '</b> — ' + esc(w.detail) + '</div></div>').join('');
+  out.innerHTML =
+    '<div class="card"><h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3v2M4.9 6.9l1.4 1.4M3 14h2M19 14h2M17.7 8.3l1.4-1.4M7 14a5 5 0 0 1 10 0M4 18h16M8 22h8" stroke="#5b6675" stroke-width="1.8" stroke-linecap="round"/></svg>Morning brief — ' + esc(d.date) + ' (what changed overnight)</h2>' +
+    '<div class="meta">' + (secs ? '<span class="pill pill-hot"><b>ready</b> in ' + secs + 's</span>' : '') +
+    '<span class="pill"><b>receipts</b> ' + (d.evidence || []).length + '</span>' +
+    '<span class="pill"><b>transport</b> ' + esc(d.transport) + '</span></div>' +
+    '<div class="brief">' + esc(d.brief_md) + '</div></div>' +
+    (wl ? '<div class="card"><h2>Watchlist</h2>' + wl + '</div>' : '') +
+    (ev ? '<div class="card"><h2>Evidence — every number cites its query</h2>' + ev + '</div>' : '') +
+    (d.trace_tree ? '<div class="card"><details open><summary>Receipt trace (spans)</summary><pre class="tree">' + esc(d.trace_tree) + '</pre></details></div>' : '');
+}
+
+async function morningBrief(){
+  if(btn.disabled) return;
+  setBusy(true);
+  status.className = 'statusline busy';
+  status.innerHTML = '<span class="pulse" aria-hidden="true"></span>' +
+    '<span class="st-stage">Comparing yesterday against the trailing week — 3 SQL receipts via the official MCP server…</span>';
+  out.innerHTML = skeleton();
+  sr.textContent = 'Building the morning brief.';
+  const t0 = performance.now();
+  const ctl = new AbortController();
+  const guard = setTimeout(() => ctl.abort(), MORNING_TIMEOUT_MS);
+  try {
+    const r = await fetch('/morning', {signal: ctl.signal});
+    clearTimeout(guard);
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.detail || r.statusText);
+    const secs = Math.max(1, Math.round((performance.now() - t0) / 1000));
+    status.className = 'statusline';
+    status.textContent = 'Morning brief ready in ' + secs + 's.';
+    sr.textContent = 'Morning brief ready in ' + secs + 's.';
+    renderMorning(d, secs);
+  } catch(e) {
+    clearTimeout(guard);
+    const msg = e.name === 'AbortError'
+      ? 'Gave up after ' + Math.round(MORNING_TIMEOUT_MS / 1000) + 's — the warehouse may be cold-resuming. Try again.'
+      : 'Morning brief failed: ' + e.message;
+    status.className = 'statusline'; status.textContent = '';
+    out.innerHTML = '<div class="card"><div class="err">' + esc(msg) + ' <button class="chip" onclick="morningBrief()">Retry</button></div></div>';
+    sr.textContent = msg;
+  } finally {
+    setBusy(false);
+  }
 }
 </script>
 </body>
