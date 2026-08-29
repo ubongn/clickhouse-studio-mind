@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 640" font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5b6675"/>
+    </marker>
+    <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4285F4"/>
+    </marker>
+  </defs>
+
+  <rect width="1180" height="640" fill="#f7f8fa"/>
+
+  <text x="40" y="46" font-size="22" font-weight="700" fill="#1c2430">ClickHouse Studio Mind — architecture</text>
+  <text x="40" y="68" font-size="13" fill="#5b6675">Evidence-cited decision briefs · every warehouse call through the official mcp-clickhouse server · every model call through Google Cloud</text>
+
+  <!-- legend -->
+  <g font-size="12" fill="#5b6675">
+    <rect x="836" y="30" width="14" height="14" rx="3" fill="#e8f0fe" stroke="#4285F4"/>
+    <text x="856" y="41">Google Cloud</text>
+    <rect x="956" y="30" width="14" height="14" rx="3" fill="#fdf6d8" stroke="#e0b400"/>
+    <text x="976" y="41">ClickHouse</text>
+    <rect x="1076" y="30" width="14" height="14" rx="3" fill="#ffffff" stroke="#cfd6e0"/>
+    <text x="1096" y="41">Other</text>
+  </g>
+
+  <!-- ============ user / judge ============ -->
+  <g>
+    <rect x="40" y="120" width="200" height="120" rx="12" fill="#fff" stroke="#cfd6e0" stroke-width="1.5"/>
+    <text x="60" y="150" font-size="15" font-weight="700" fill="#1c2430">Studio executive</text>
+    <text x="60" y="172" font-size="12" fill="#5b6675">asks in plain English:</text>
+    <text x="60" y="190" font-size="12" fill="#37455a" font-style="italic">"Which genres keep</text>
+    <text x="60" y="206" font-size="12" fill="#37455a" font-style="italic">viewers past ep 3</text>
+    <text x="60" y="222" font-size="12" fill="#37455a" font-style="italic">in EMEA?"</text>
+  </g>
+
+  <!-- hosted UI -->
+  <g>
+    <rect x="40" y="300" width="200" height="110" rx="12" fill="#fff" stroke="#cfd6e0" stroke-width="1.5"/>
+    <rect x="52" y="312" width="16" height="16" rx="4" fill="#f5e14b"/>
+    <text x="76" y="325" font-size="14" font-weight="700" fill="#1c2430">Hosted judge page</text>
+    <text x="60" y="350" font-size="12" fill="#5b6675">clickhouse-studio-mind</text>
+    <text x="60" y="366" font-size="12" fill="#5b6675">.vercel.app</text>
+    <text x="60" y="390" font-size="11" fill="#8a93a3">brief + SQL receipts + span tree</text>
+  </g>
+
+  <!-- ============ agent on Google Cloud ============ -->
+  <g>
+    <rect x="320" y="100" width="420" height="330" rx="14" fill="#e8f0fe" fill-opacity="0.55" stroke="#4285F4" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="344" y="128" font-size="13" font-weight="700" fill="#1967d2">GOOGLE CLOUD — agent runtime (Cloud Run)</text>
+
+    <!-- api -->
+    <rect x="344" y="150" width="170" height="74" rx="10" fill="#fff" stroke="#4285F4" stroke-width="1.5"/>
+    <text x="360" y="176" font-size="13" font-weight="700" fill="#1c2430">FastAPI service</text>
+    <text x="360" y="194" font-size="11" fill="#5b6675">POST /ask · GET /morning</text>
+    <text x="360" y="210" font-size="11" fill="#5b6675">sqlguard · read-only by construction</text>
+
+    <!-- pipeline -->
+    <rect x="344" y="246" width="372" height="150" rx="10" fill="#fff" stroke="#4285F4" stroke-width="1.5"/>
+    <text x="360" y="270" font-size="13" font-weight="700" fill="#1c2430">5-stage pipeline</text>
+    <g font-size="11.5" fill="#37455a">
+      <rect x="360" y="282" width="104" height="26" rx="6" fill="#f1f3f6"/><text x="372" y="299">PARSE</text>
+      <rect x="472" y="282" width="104" height="26" rx="6" fill="#f1f3f6"/><text x="484" y="299">QUERY</text>
+      <rect x="584" y="282" width="112" height="26" rx="6" fill="#f1f3f6"/><text x="596" y="299">DIAGNOSE</text>
+      <rect x="360" y="316" width="104" height="26" rx="6" fill="#f1f3f6"/><text x="372" y="333">RECOMMEND</text>
+      <rect x="472" y="316" width="104" height="26" rx="6" fill="#f1f3f6"/><text x="484" y="333">BRIEF</text>
+      <rect x="584" y="316" width="112" height="26" rx="6" fill="#fdf6d8" stroke="#e0b400"/><text x="596" y="333" fill="#7a6a00">morning push</text>
+    </g>
+    <text x="360" y="368" font-size="11" fill="#5b6675">evidence registry: every number → its SQL + scan facts</text>
+    <text x="360" y="384" font-size="11" fill="#5b6675">Langfuse-shaped spans: stages → generations → tool calls</text>
+
+    <!-- vertex gemini -->
+    <rect x="344" y="412" width="170" height="86" rx="10" fill="#fff" stroke="#4285F4" stroke-width="1.5"/>
+    <text x="360" y="436" font-size="13" font-weight="700" fill="#1c2430">Gemini 2.5 Flash</text>
+    <text x="360" y="454" font-size="11" fill="#5b6675">Vertex AI · provider=vertex</text>
+    <text x="360" y="470" font-size="11" fill="#5b6675">runtime service account (ADC)</text>
+    <text x="360" y="486" font-size="11" fill="#8a93a3">zero OpenAI / Anthropic paths</text>
+  </g>
+
+  <!-- ============ MCP server ============ -->
+  <g>
+    <rect x="800" y="150" width="170" height="130" rx="12" fill="#fdf6d8" stroke="#e0b400" stroke-width="1.5"/>
+    <text x="816" y="178" font-size="13" font-weight="700" fill="#1c2430">mcp-clickhouse</text>
+    <text x="816" y="196" font-size="11" fill="#5b6675">official ClickHouse</text>
+    <text x="816" y="210" font-size="11" fill="#5b6675">MCP server (stdio)</text>
+    <text x="816" y="234" font-size="11" fill="#37455a">tools: select_query ·</text>
+    <text x="816" y="248" font-size="11" fill="#37455a">list_tables</text>
+    <text x="816" y="270" font-size="10.5" fill="#8a93a3">the ONLY warehouse door</text>
+  </g>
+
+  <!-- ============ ClickHouse Cloud ============ -->
+  <g>
+    <rect x="800" y="320" width="340" height="178" rx="12" fill="#fdf6d8" fill-opacity="0.6" stroke="#e0b400" stroke-width="1.5"/>
+    <text x="820" y="348" font-size="13" font-weight="700" fill="#7a6a00">CLICKHOUSE CLOUD</text>
+    <g font-size="11.5" fill="#37455a">
+      <rect x="820" y="362" width="146" height="26" rx="6" fill="#fff" stroke="#e0b400"/><text x="830" y="379">viewing_events · 50M</text>
+      <rect x="976" y="362" width="146" height="26" rx="6" fill="#fff" stroke="#e0b400"/><text x="986" y="379">users · 1.2M</text>
+      <rect x="820" y="396" width="146" height="26" rx="6" fill="#fff" stroke="#e0b400"/><text x="830" y="413">titles · 180</text>
+      <rect x="976" y="396" width="146" height="26" rx="6" fill="#fff" stroke="#e0b400"/><text x="986" y="413">episodes · 6.4k</text>
+    </g>
+    <text x="820" y="448" font-size="11" fill="#5b6675">system.query_log → scan receipts</text>
+    <text x="820" y="464" font-size="11" fill="#5b6675">(rows read · bytes · server ms)</text>
+    <text x="820" y="486" font-size="10.5" fill="#8a93a3">seed: data/generate.py --rows 50000000 · data/load.py</text>
+  </g>
+
+  <!-- ============ outputs ============ -->
+  <g>
+    <rect x="320" y="520" width="200" height="86" rx="12" fill="#fff" stroke="#cfd6e0" stroke-width="1.5"/>
+    <text x="336" y="546" font-size="13" font-weight="700" fill="#1c2430">Decision brief</text>
+    <text x="336" y="564" font-size="11" fill="#5b6675">[Q1]-cited numbers,</text>
+    <text x="336" y="578" font-size="11" fill="#5b6675">scan pill per receipt,</text>
+    <text x="336" y="592" font-size="11" fill="#5b6675">saved as .md + .trace.json</text>
+
+    <rect x="552" y="520" width="200" height="86" rx="12" fill="#fff" stroke="#cfd6e0" stroke-width="1.5"/>
+    <text x="568" y="546" font-size="13" font-weight="700" fill="#1c2430">Morning brief (7am)</text>
+    <text x="568" y="564" font-size="11" fill="#5b6675">what changed overnight:</text>
+    <text x="568" y="578" font-size="11" fill="#5b6675">z-scores vs trailing week,</text>
+    <text x="568" y="592" font-size="11" fill="#5b6675">watchlist + QoE attribution</text>
+  </g>
+
+  <!-- ============ arrows ============ -->
+  <path d="M240 180 H316" stroke="#5b6675" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+  <text x="252" y="170" font-size="10.5" fill="#8a93a3">HTTPS</text>
+
+  <path d="M240 355 H316" stroke="#5b6675" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+
+  <path d="M514 187 H560 V246" stroke="#4285F4" stroke-width="2" fill="none" marker-end="url(#arrg)"/>
+
+  <path d="M530 246 V412" stroke="#4285F4" stroke-width="2" fill="none" marker-end="url(#arrg)"/>
+  <text x="540" y="380" font-size="10.5" fill="#8a93a3">prompt · JSON</text>
+
+  <path d="M716 224 H796" stroke="#e0b400" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+  <text x="716" y="216" font-size="10.5" fill="#8a93a3">JSON-RPC over stdio</text>
+
+  <path d="M885 280 V316" stroke="#e0b400" stroke-width="2.5" fill="none" marker-end="url(#arr)"/>
+  <text x="895" y="302" font-size="10.5" fill="#8a93a3">native TCP · readonly</text>
+
+  <path d="M716 340 C 760 340 760 470 796 470" stroke="#e0b400" stroke-width="2.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+  <text x="726" y="330" font-size="10.5" fill="#8a93a3">query_log stats</text>
+
+  <path d="M420 396 V516" stroke="#5b6675" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+  <path d="M600 396 V516" stroke="#5b6675" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+
+  <path d="M240 410 C 280 470 280 556 316 556" stroke="#5b6675" stroke-width="2" fill="none" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+  <!-- footer note -->
+  <text x="40" y="624" font-size="11" fill="#8a93a3">Fictional studio (Nimbus+ · Nightfall Division) · synthetic 50M-event dataset seeded from data/generate.py · read-only by construction</text>
+</svg>
