@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Studio Mind — square 512×512</title>
+<style>
+  :root{
+    --coal:#17181c; --coal2:#1d1f25; --panel:#1e2026; --line:#33363e;
+    --ink:#f4f1e8; --dim:#a39e93; --yellow:#f5e14b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--coal)}
+  body{font-family:'Segoe UI',-apple-system,'SF Pro Display',system-ui,Arial,sans-serif}
+  .stage{
+    position:relative;width:512px;height:512px;overflow:hidden;
+    background:
+      radial-gradient(420px 300px at 50% 30%, rgba(84,92,116,.18) 0%, rgba(84,92,116,0) 70%),
+      radial-gradient(300px 300px at 50% 112%, rgba(245,225,75,.08) 0%, rgba(245,225,75,0) 60%),
+      var(--coal);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+  }
+  .stage::before{
+    content:"";position:absolute;inset:0;
+    background-image:
+      linear-gradient(rgba(244,241,232,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(244,241,232,.03) 1px, transparent 1px);
+    background-size:64px 64px;
+  }
+  .plus{position:absolute;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:18px;color:var(--yellow);opacity:.16;user-select:none}
+  .mark{position:relative;filter:drop-shadow(0 0 34px rgba(245,225,75,.16));margin-bottom:34px}
+  .name{
+    position:relative;font-size:66px;font-weight:800;letter-spacing:-.01em;line-height:1;
+    color:var(--ink);
+  }
+  .name .w2{color:var(--yellow)}
+  .rule{width:132px;height:3px;border-radius:2px;margin:26px auto 24px;
+    background:linear-gradient(90deg,rgba(245,225,75,0),var(--yellow),rgba(245,225,75,0));}
+  .tag{
+    position:relative;text-align:center;
+    font-family:ui-monospace,Consolas,Menlo,monospace;font-size:13px;line-height:2.05;letter-spacing:.2em;
+    color:var(--ink);
+  }
+  .tag .l2{color:var(--dim)}
+  .tag .l2 b{color:var(--yellow);font-weight:600}
+</style>
+</head>
+<body>
+<div class="stage">
+  <span class="plus" style="left:64px;top:60px">+</span>
+  <span class="plus" style="right:70px;top:96px;opacity:.12">+</span>
+  <span class="plus" style="left:88px;bottom:78px;opacity:.13">+</span>
+  <span class="plus" style="right:66px;bottom:110px;opacity:.1">+</span>
+
+  <!-- mark: same mosaic geometry as the live app favicon -->
+  <div class="mark">
+    <svg xmlns="http://www.w3.org/2000/svg" width="232" height="232" viewBox="0 0 64 64" role="img" aria-label="Studio Mind mark">
+      <g transform="translate(2 2) scale(2.5)">
+        <rect width="24" height="24" rx="5.5" fill="#f5e14b"/>
+        <path fill="#17181c" d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>
+      </g>
+    </svg>
+  </div>
+  <div class="name">Studio <span class="w2">Mind</span></div>
+  <div class="rule"></div>
+  <!-- README.md's own positioning, compressed to two mono lines -->
+  <div class="tag">AN ANALYTICS AGENT<br>FOR STUDIO EXECUTIVES<br><span class="l2">BUILT <b>CLICKHOUSE-NATIVE</b></span></div>
+</div>
+</body>
+</html>
