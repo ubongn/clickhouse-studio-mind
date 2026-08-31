@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Studio Mind mark">
+  <title>Studio Mind mark — four-block mosaic on a yellow tile</title>
+  <!-- Same geometry as the live app's inline favicon (commit b95a20d):
+       24-grid, tile rx 5.5, mosaic blocks 7/4/10/7. Glyph uses the brand
+       charcoal #17181c (the shipped favicon's #1c2430 stays as-is). -->
+  <g transform="translate(2 2) scale(2.5)">
+    <rect width="24" height="24" rx="5.5" fill="#f5e14b"/>
+    <path fill="#17181c" d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>
+  </g>
+</svg>

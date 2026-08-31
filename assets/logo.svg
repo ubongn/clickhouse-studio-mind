@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" role="img" aria-label="Studio Mind">
+  <title>Studio Mind — the analytics braintrust for film &amp; TV</title>
+  <!-- mark: favicon-faithful mosaic, 60px -->
+  <g transform="translate(2 2) scale(2.5)">
+    <rect width="24" height="24" rx="5.5" fill="#f5e14b"/>
+    <path fill="#17181c" d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>
+  </g>
+  <!-- wordmark -->
+  <text x="76" y="40" font-family="'Segoe UI','SF Pro Display',system-ui,-apple-system,Arial,sans-serif" font-size="27" font-weight="800" letter-spacing="1.5">
+    <tspan fill="#f4f1e8">STUDIO</tspan><tspan fill="#f5e14b"> MIND</tspan>
+  </text>
+  <text x="77.5" y="55" font-family="ui-monospace,Consolas,Menlo,monospace" font-size="9.5" letter-spacing="2.4" fill="#a39e93">EVERY NUMBER CITES ITS SQL</text>
+</svg>
