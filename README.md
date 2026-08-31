@@ -1,4 +1,4 @@
-# ClickHouse Studio Mind
+# <img src="assets/logo-mark.svg" width="44" align="middle" alt="Studio Mind logo"> ClickHouse Studio Mind
 
 [![CI](https://github.com/ubongn/clickhouse-studio-mind/actions/workflows/ci.yml/badge.svg)](https://github.com/ubongn/clickhouse-studio-mind/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
