@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Studio Mind — cover 1920×1080</title>
+<style>
+  :root{
+    --coal:#17181c; --coal2:#1d1f25; --panel:#1e2026; --line:#33363e;
+    --ink:#f4f1e8; --dim:#a39e93; --yellow:#f5e14b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--coal)}
+  body{font-family:'Segoe UI',-apple-system,'SF Pro Display',system-ui,Arial,sans-serif}
+  .stage{
+    position:relative;width:1920px;height:1080px;overflow:hidden;
+    background:
+      radial-gradient(1100px 700px at 80% 14%, rgba(84,92,116,.16) 0%, rgba(84,92,116,0) 60%),
+      radial-gradient(900px 900px at 10% 92%, rgba(245,225,75,.07) 0%, rgba(245,225,75,0) 55%),
+      var(--coal);
+  }
+  /* faint editorial grid */
+  .stage::before{
+    content:"";position:absolute;inset:0;
+    background-image:
+      linear-gradient(rgba(244,241,232,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(244,241,232,.035) 1px, transparent 1px);
+    background-size:96px 96px;
+    mask-image:radial-gradient(1400px 900px at 45% 45%, #000 30%, transparent 78%);
+  }
+  /* giant ghost mosaic, bottom-right */
+  .ghost{position:absolute;right:-190px;bottom:-230px;width:760px;height:760px}
+  .ghost svg{width:100%;height:100%}
+  .topbar{
+    position:absolute;top:52px;right:72px;
+    font-family:ui-monospace,Consolas,Menlo,monospace;font-size:22px;letter-spacing:.28em;
+    color:var(--dim);
+  }
+  .topbar b{color:var(--yellow);font-weight:600}
+  .hero{
+    position:absolute;left:120px;top:0;height:100%;max-width:1700px;
+    display:flex;align-items:center;gap:96px;
+  }
+  .mark{flex:none;filter:drop-shadow(0 0 60px rgba(245,225,75,.14))}
+  .words .kicker{
+    font-family:ui-monospace,Consolas,Menlo,monospace;
+    font-size:26px;letter-spacing:.32em;color:var(--yellow);margin-bottom:26px;
+  }
+  .words h1{
+    font-size:168px;font-weight:800;letter-spacing:-.015em;line-height:.98;
+    color:var(--ink);
+  }
+  .words h1 .w2{color:var(--yellow)}
+  .rule{
+    width:220px;height:4px;border-radius:2px;margin:44px 0 40px;
+    background:linear-gradient(90deg,var(--yellow),rgba(245,225,75,0));
+  }
+  .words .tag{font-size:52px;font-weight:300;color:var(--ink);opacity:.94;max-width:1000px;line-height:1.25}
+  .words .tag b{font-weight:600;color:var(--yellow)}
+  .words .sub{
+    margin-top:30px;max-width:1020px;
+    font-family:ui-monospace,Consolas,Menlo,monospace;font-size:26px;line-height:1.65;color:var(--dim);
+  }
+  .words .sub b{color:var(--ink);font-weight:600}
+  .chips{
+    position:absolute;left:120px;bottom:78px;display:flex;gap:22px;align-items:center;
+  }
+  .chip{
+    font-family:ui-monospace,Consolas,Menlo,monospace;font-size:25px;letter-spacing:.04em;
+    color:var(--ink);padding:16px 30px;border-radius:999px;
+    background:rgba(30,32,38,.82);border:1px solid var(--line);white-space:nowrap;
+  }
+  .chip.hot{color:var(--yellow);border-color:rgba(245,225,75,.45)}
+  /* editorial crop marks */
+  .plus{position:absolute;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:26px;color:var(--yellow);opacity:.16;user-select:none}
+</style>
+</head>
+<body>
+<div class="stage">
+  <!-- ghost mosaic: the favicon glyph, drawn huge -->
+  <div class="ghost" aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <rect x="0.35" y="0.35" width="23.3" height="23.3" rx="5.3" fill="none" stroke="rgba(244,241,232,.06)" stroke-width="0.07"/>
+      <rect x="4"    y="4"  width="7" height="7"  fill="none" stroke="rgba(244,241,232,.065)" stroke-width="0.07"/>
+      <rect x="13"   y="4"  width="7" height="4"  fill="none" stroke="rgba(244,241,232,.065)" stroke-width="0.07"/>
+      <rect x="13"   y="10" width="7" height="10" fill="none" stroke="rgba(245,225,75,.14)" stroke-width="0.07" stroke-dasharray="0.9 0.75"/>
+      <rect x="4"    y="13" width="7" height="7"  fill="none" stroke="rgba(244,241,232,.065)" stroke-width="0.07"/>
+    </svg>
+  </div>
+
+  <span class="plus" style="left:150px;top:132px">+</span>
+  <span class="plus" style="left:1712px;top:176px;opacity:.12">+</span>
+  <span class="plus" style="left:1604px;top:912px;opacity:.1">+</span>
+  <span class="plus" style="left:252px;top:926px;opacity:.13">+</span>
+
+  <div class="topbar">50M ROWS &middot; <b>ONE-PAGE BRIEF</b></div>
+
+  <div class="hero">
+    <!-- mark: same mosaic geometry as the live app favicon -->
+    <div class="mark">
+      <svg xmlns="http://www.w3.org/2000/svg" width="196" height="196" viewBox="0 0 64 64" role="img" aria-label="Studio Mind mark">
+        <g transform="translate(2 2) scale(2.5)">
+          <rect width="24" height="24" rx="5.5" fill="#f5e14b"/>
+          <path fill="#17181c" d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>
+        </g>
+      </svg>
+    </div>
+    <div class="words">
+      <!-- Tagline = README.md's own positioning: "An analytics agent for studio executives, built ClickHouse-native." -->
+      <div class="kicker">THE ANALYTICS BRAINTRUST FOR FILM &amp; TV</div>
+      <h1>Studio <span class="w2">Mind</span></h1>
+      <div class="rule"></div>
+      <p class="tag">An analytics agent for <b>studio executives</b>, built <b>ClickHouse-native</b>.</p>
+      <p class="sub"><b>Ask in plain English &rarr; get a one-page decision brief</b> &mdash; every number cites the exact SQL that produced it, over 50M rows of audience behavior.</p>
+    </div>
+  </div>
+
+  <div class="chips">
+    <span class="chip">ClickHouse MCP</span>
+    <span class="chip">Gemini 2.5 Flash on Vertex</span>
+    <span class="chip">Vercel</span>
+    <span class="chip hot">read-only by construction</span>
+  </div>
+</div>
+</body>
+</html>
